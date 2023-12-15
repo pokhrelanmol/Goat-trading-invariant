@@ -10,6 +10,7 @@ src/types
 # Hardhat files
 cache
 artifacts
+bin
 
 # local files
 .openzeppelin/
@@ -17,3 +18,6 @@ artifacts
 # Forge Files
 forge_cache/
 out/
+
+# local files
+DesignPrinciples.md
