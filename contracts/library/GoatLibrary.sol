@@ -29,8 +29,8 @@ library GoatLibrary {
             reserveWETH > 0 && reserveTKN > 0,
             "GoatLibrary: INSUFFICIENT_LIQUIDITY"
         );
-        // .36% fee on WETH
-        uint actualAmountWETHIn = amountWETHIn * 9964;
+        // 1% fee on WETH
+        uint actualAmountWETHIn = amountWETHIn * 9900;
         uint numerator = actualAmountWETHIn * reserveTKN;
         uint denominator = reserveWETH * 10000 + actualAmountWETHIn;
         amountTKNOut = numerator / denominator;
@@ -52,8 +52,8 @@ library GoatLibrary {
         uint numerator = amountTKNIn * reserveWETH;
         uint denominator = reserveTKN * 10000 + amountTKNIn;
         uint actualAmountWETHOut = numerator / denominator;
-        // .36% fee on WETH
-        amountWETHOut = (actualAmountWETHOut * 9964) / 10000;
+        // 1% fee on WETH
+        amountWETHOut = (actualAmountWETHOut * 9900) / 10000;
     }
 
     function getTokenAmountIn() internal pure returns (uint amountTokenIn) {}

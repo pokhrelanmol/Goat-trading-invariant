@@ -8,8 +8,7 @@ contract GoatTypes {
         uint128 totalSupply;
         uint96 virtualAmount;
         uint96 presaleAmount;
-        uint96 feesCollected;
-        uint96 feesDistributed;
+        uint96 feesPerTokenStored;
         uint40 lastTrade;
         bool exists;
         bool isPresale;
@@ -21,13 +20,14 @@ contract GoatTypes {
         uint112 presaleBalance;
         uint32 lockedUntil;
         uint8 withdrawlLeft;
-        uint112 rewardPerTokenPaid;
-        uint112 rewardPerTokenCollected;
+        uint96 feesPerTokenPaid;
+        uint112 pendingFees;
         uint32 lastUpdate;
     }
 
     struct LaunchParams {
         uint96 virtualAmount;
         uint96 presaleAmount;
+        uint96 initialWETH;
     }
 }
