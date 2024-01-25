@@ -3,31 +3,31 @@ pragma solidity ^0.8.0;
 
 contract GoatTypes {
     struct Pool {
-        uint128 reserveWETH;
-        uint128 reserveTKN;
-        uint128 totalSupply;
-        uint96 virtualAmount;
-        uint96 presaleAmount;
-        uint96 feesPerTokenStored;
-        uint40 lastTrade;
+        uint112 reserveWeth;
+        uint112 reserveToken;
+        uint32 lastTrade;
+        uint112 totalSupply;
+        uint112 virtualEth;
+        uint32 vestingUntil;
+        uint112 bootstrapEth;
+        uint112 feesPerTokenStored;
         bool exists;
-        bool isPresale;
-        uint112 price0CumulativeLast;
-        uint112 price1CumulativeLast;
+        uint256 kLast;
     }
+
     struct UserInfo {
         uint112 fractionalBalance;
         uint112 presaleBalance;
         uint32 lockedUntil;
-        uint8 withdrawlLeft;
-        uint96 feesPerTokenPaid;
-        uint112 pendingFees;
+        uint104 pendingFees;
+        uint112 feesPerTokenPaid;
         uint32 lastUpdate;
+        uint8 withdrawlLeft;
     }
 
     struct LaunchParams {
-        uint96 virtualAmount;
-        uint96 presaleAmount;
-        uint96 initialWETH;
+        uint112 virtualEth;
+        uint112 bootstrapEth;
+        uint112 initialWeth;
     }
 }
