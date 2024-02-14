@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "./library/Math.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./library/GoatLibrary.sol";
 import "./library/GoatTypes.sol";
 import "./library/GoatErrors.sol";
@@ -78,13 +78,13 @@ contract GoatExchange is ReentrancyGuard {
         if (pool.vestingUntil == MAX_UINT32) revert GoatErrors.PresalePeriod();
 
         if (newPool) {
-            // TODO: Make sure reserveWeth is updated if launch team wants to add
+            // TODO: Make sure reserveBase is updated if launch team wants to add
             // Some amount of eth
-            pool.virtualEth = launchParams.virtualEth;
-            pool.bootstrapEth = launchParams.bootstrapEth;
+            pool.virtualEth = launchParams.virtualBase;
+            pool.bootstrapEth = launchParams.bootstrapBase;
             pool.vestingUntil = MAX_UINT32;
 
-            if (launchParams.bootstrapEth <= launchParams.initialWeth) {
+            if (launchParams.bootstrapBase <= launchParams.initialBase) {
                 pool.vestingUntil = uint32(block.timestamp);
             }
         }
@@ -95,7 +95,7 @@ contract GoatExchange is ReentrancyGuard {
         {
             uint256 tokenBalBefore = IERC20(token).balanceOf(address(this));
             _handleTransferTokens(
-                token, newPool ? launchParams.initialWeth : amountWETH, amountTKN, msg.sender, address(this)
+                token, newPool ? launchParams.initialBase : amountWETH, amountTKN, msg.sender, address(this)
             );
             uint256 tokenBalAfter = IERC20(token).balanceOf(address(this));
             // Check for tokens with fee on transfer
@@ -109,7 +109,7 @@ contract GoatExchange is ReentrancyGuard {
             _updatePoolDetails(
                 poolId,
                 pool,
-                newPool ? launchParams.initialWeth : amountWETH,
+                newPool ? launchParams.initialBase : amountWETH,
                 amountTKN,
                 fractionalLiquidity,
                 false,
@@ -132,7 +132,7 @@ contract GoatExchange is ReentrancyGuard {
     ) internal returns (uint256 liquidity) {
         // calculate liquidity
         liquidity = Math.min(
-            (wethOptimal * pool.totalSupply) / pool.reserveWeth, (tokenOptimal * pool.totalSupply) / pool.reserveToken
+            (wethOptimal * pool.totalSupply) / pool.reserveBase, (tokenOptimal * pool.totalSupply) / pool.reserveToken
         );
         // We record fractional liquidity balance of 25% for limitng withdrawals
         // so we atleast need 4 wei for rounding reasons
@@ -190,18 +190,18 @@ contract GoatExchange is ReentrancyGuard {
         if (liquidity != 0) {
             if (isAdd) {
                 pool.totalSupply += uint112(liquidity);
-                pool.reserveWeth += uint112(amountWETH);
+                pool.reserveBase += uint112(amountWETH);
                 pool.reserveToken += uint112(amountTKN);
             } else {
                 pool.totalSupply -= uint112(liquidity);
-                pool.reserveWeth -= uint112(amountWETH);
+                pool.reserveBase -= uint112(amountWETH);
                 pool.reserveToken -= uint112(amountTKN);
             }
         } else if (isBuy) {
-            pool.reserveWeth += uint112(amountWETH);
+            pool.reserveBase += uint112(amountWETH);
             pool.reserveToken -= uint112(amountTKN);
         } else {
-            pool.reserveWeth -= uint112(amountWETH);
+            pool.reserveBase -= uint112(amountWETH);
             pool.reserveToken += uint112(amountTKN);
         }
         // TODO: update kLast here
@@ -216,17 +216,17 @@ contract GoatExchange is ReentrancyGuard {
         uint256 wethMin,
         uint256 tokenMin
     ) internal pure returns (uint256 amountWETH, uint256 amountTKN) {
-        if (pool.reserveWeth == 0 && pool.reserveToken == 0) {
+        if (pool.reserveBase == 0 && pool.reserveToken == 0) {
             (amountWETH, amountTKN) = (wethDesired, tokenDesired);
         } else {
-            uint256 amountTKNOptimal = GoatLibrary.quote(wethDesired, pool.reserveWeth, pool.reserveToken);
+            uint256 amountTKNOptimal = GoatLibrary.quote(wethDesired, pool.reserveBase, pool.reserveToken);
             if (amountTKNOptimal <= tokenDesired) {
                 if (amountTKNOptimal >= tokenMin) {
                     revert GoatErrors.InsufficientTokenAmount();
                 }
                 (amountWETH, amountTKN) = (wethDesired, amountTKNOptimal);
             } else {
-                uint256 amountWETHOptimal = GoatLibrary.quote(tokenDesired, pool.reserveToken, pool.reserveWeth);
+                uint256 amountWETHOptimal = GoatLibrary.quote(tokenDesired, pool.reserveToken, pool.reserveBase);
                 assert(amountWETHOptimal <= wethDesired);
                 if (amountWETHOptimal >= wethMin) {
                     revert GoatErrors.InsufficientWethAmount();
@@ -245,7 +245,7 @@ contract GoatExchange is ReentrancyGuard {
         // TODO: handle a scenario where team wants to remove tokens
         // when there is not enough trades to turn presale to an AMM
 
-        amountWETH = (pool.reserveWeth * liquidity) / pool.totalSupply;
+        amountWETH = (pool.reserveBase * liquidity) / pool.totalSupply;
         amountTKN = (pool.reserveToken * liquidity) / pool.totalSupply;
 
         if (amountTKN < tokenMin) revert GoatErrors.InsufficientTokenAmount();
@@ -356,7 +356,7 @@ contract GoatExchange is ReentrancyGuard {
     function isPresale(bytes32 poolId) public view returns (bool presale) {
         GoatTypes.Pool memory pool = pools[poolId];
 
-        presale = pool.reserveWeth < (pool.bootstrapEth);
+        presale = pool.reserveBase < (pool.bootstrapEth);
     }
 
     /**
@@ -483,10 +483,10 @@ contract GoatExchange is ReentrancyGuard {
         // Update pool details with fees and reserve changes
         pool.lastTrade = lastTrade;
         if (swapType == 1) {
-            pool.reserveWeth += uint112(actualTokenAmountIn - liquidityFees - protocolFees);
+            pool.reserveBase += uint112(actualTokenAmountIn - liquidityFees - protocolFees);
             pool.reserveToken -= uint112(actualAmountOut);
         } else {
-            pool.reserveWeth -= uint112(actualAmountOut + liquidityFees + protocolFees);
+            pool.reserveBase -= uint112(actualAmountOut + liquidityFees + protocolFees);
             pool.reserveToken += uint112(actualTokenAmountIn);
         }
         pools[poolId] = pool;
@@ -544,7 +544,7 @@ contract GoatExchange is ReentrancyGuard {
         pendingProtocolFees = protocolFees;
         pool.feesPerTokenStored += uint112((liquidityFees * 1e18) / pool.totalSupply);
 
-        pool.reserveWeth += uint112(buyBackShare - (protocolFees + liquidityFees));
+        pool.reserveBase += uint112(buyBackShare - (protocolFees + liquidityFees));
         pool.reserveToken -= uint112(amountExpected);
 
         // Burn goat token
@@ -554,6 +554,14 @@ contract GoatExchange is ReentrancyGuard {
         pools[poolId] = pool;
     }
 
+    /**
+     * @dev Sets a new developer treasury address.
+     * Requirements:
+     * - The caller must be the current `devTreasury`.
+     * - `newDevTreasury` cannot be the zero address.
+     *
+     * @param newDevTreasury The address to be set as the new developer treasury.
+     */
     function setDevTreasury(address newDevTreasury) external {
         if (msg.sender != devTreasury) revert GoatErrors.Unauthorized();
         if (newDevTreasury == address(0)) revert GoatErrors.ZeroAddress();
@@ -561,15 +569,6 @@ contract GoatExchange is ReentrancyGuard {
         devTreasury = newDevTreasury;
     }
     // VIEW FUNCTIONS
-
-    /// @title Token Calculation for Liquidity Bootstrap
-    /// @notice Calculates the actual token amount needed for liquidity bootstrapping.
-    /// @dev This function computes the token amount based on the provided virtual ETH, bootstrap ETH, and initial token match.
-    /// It uses the constant product formula (k = x * y) to determine the distribution of tokens between the presale and the AMM (Automated Market Maker).
-    /// @param virtualEth The amount of virtual ETH used for initial pricing.
-    /// @param bootstrapEth The amount of ETH required for liquidity bootstrapping.
-    /// @param initialTokenMatch The initial amount of tokens matched with virtual ETH for actual market price.
-    /// @return tokenAmt The calculated total amount of tokens required for liquidity bootstrapping, considering both presale and AMM allocations.
 
     function getActualTokenForLiquidityBootstrap(uint256 virtualEth, uint256 bootstrapEth, uint256 initialTokenMatch)
         public
