@@ -44,7 +44,7 @@ contract GoatTypes {
     }
 
     struct InitParams {
-        address liquidiyProvider;
+        address liquidityProvider;
         uint32 lockPeriod;
         uint112 virtualEth;
         uint112 bootstrapEth;
@@ -67,5 +67,6 @@ contract GoatTypes {
         uint256 tokenAmount;
         uint256 wethAmount;
         uint256 liquidity;
+        address token;
     }
 }

@@ -68,7 +68,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         initialTokenMatch = params.initialTokenMatch;
         _virtualEth = params.virtualEth;
         _bootstrapEth = params.bootstrapEth;
-        initialLPInfo.liquidityProvider = params.liquidiyProvider;
+        initialLPInfo.liquidityProvider = params.liquidityProvider;
     }
 
     function _update(uint256 balanceEth, uint256 balanceToken) internal {

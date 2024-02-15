@@ -28,4 +28,5 @@ contract GoatErrors {
     error Receive();
     error PresalePeriod();
     error WithdrawalCooldownActive();
+    error WrongToken();
 }
