@@ -3,7 +3,7 @@ pragma solidity 0.8.19;
 
 contract GoatTypes {
     struct Pool {
-        uint112 reserveBase;
+        uint112 reserveEth;
         uint112 reserveToken;
         uint32 lastTrade;
         uint112 totalSupply;
@@ -13,6 +13,11 @@ contract GoatTypes {
         uint112 feesPerTokenStored;
         bool exists;
         uint256 kLast;
+    }
+
+    struct LPInfo {
+        uint224 balance;
+        uint32 lockedUntil;
     }
 
     struct UserInfo {
@@ -26,9 +31,9 @@ contract GoatTypes {
     }
 
     struct LaunchParams {
-        uint112 virtualBase;
-        uint112 bootstrapBase;
-        uint112 initialBase;
+        uint112 virtualEth;
+        uint112 bootstrapEth;
+        uint112 initialEth;
         uint112 initialTokenMatch;
     }
 
@@ -41,16 +46,16 @@ contract GoatTypes {
     struct InitParams {
         address liquidiyProvider;
         uint32 lockPeriod;
-        uint112 virtualBase;
-        uint112 bootstrapBase;
-        uint112 initialBase;
+        uint112 virtualEth;
+        uint112 bootstrapEth;
+        uint112 initialEth;
         uint112 initialTokenMatch;
     }
 
-    struct LiquidityProvider {
+    struct InitialLPInfo {
+        address liquidityProvider;
         uint112 fractionalBalance;
-        uint32 lockedUntil;
-        uint32 lastUpdate;
+        uint32 lastWithdraw;
         uint8 withdrawlLeft;
     }
 

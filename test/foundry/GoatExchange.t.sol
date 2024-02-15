@@ -12,19 +12,19 @@ contract GoatExchangeTest is Test {
     address public devTreasury = address(1232435);
     address public funder = address(985984388538387329883875982387329885983298);
     FeeOnTransferToken feeToken;
-    MockToken token0;
-    MockToken token1;
-    MockToken goat;
+    MockERC20 token0;
+    MockERC20 token1;
+    MockERC20 goat;
     MockWETH weth;
 
     function setUp() public {
         // pass weth as constructor param
         vm.startPrank(funder);
-        token0 = new MockToken();
-        token1 = new MockToken();
+        token0 = new MockERC20();
+        token1 = new MockERC20();
         feeToken = new FeeOnTransferToken();
         weth = new MockWETH();
-        goat = new MockToken();
+        goat = new MockERC20();
         exchange = new GoatExchange(
             address(weth),
             devTreasury,

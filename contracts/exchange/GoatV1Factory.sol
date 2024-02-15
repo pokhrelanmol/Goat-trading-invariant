@@ -7,7 +7,7 @@ import "./GoatV1Pair.sol";
 import "../library/GoatTypes.sol";
 
 contract GoatV1Factory {
-    address public immutable baseToken;
+    address public immutable weth;
     string private baseName;
     address public treasury;
     address public pendingTreasury;
@@ -16,15 +16,15 @@ contract GoatV1Factory {
 
     event PairCreated(address indexed token, address pair, uint256);
 
-    constructor(address _baseToken) {
-        baseToken = _baseToken;
-        baseName = IERC20Metadata(_baseToken).name();
+    constructor(address _weth) {
+        weth = _weth;
+        baseName = IERC20Metadata(_weth).name();
     }
 
     function createPair(address token, GoatTypes.InitParams memory params) external returns (address) {
-        bytes32 _salt = keccak256(abi.encodePacked(token, baseToken));
+        bytes32 _salt = keccak256(abi.encodePacked(token, weth));
         GoatV1Pair pair = new GoatV1Pair{salt: _salt}();
-        pair.initialize(token, baseToken, baseName, params);
+        pair.initialize(token, weth, baseName, params);
         pools[token] = address(pair);
         return address(pair);
     }

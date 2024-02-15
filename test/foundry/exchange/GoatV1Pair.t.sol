@@ -5,20 +5,20 @@ import "forge-std/Test.sol";
 
 import "../../../contracts/exchange/GoatV1Pair.sol";
 import "../../../contracts/exchange/GoatV1Factory.sol";
-import "../../../contracts/mock/MockERC20.sol";
 import "../../../contracts/mock/MockWETH.sol";
+import "../../../contracts/mock/MockERC20.sol";
 import "../../../contracts/library/GoatTypes.sol";
 
 contract GoatExchangeTest is Test {
     GoatV1Factory factory;
     GoatV1Pair pair;
-    MockToken goat;
+    MockERC20 goat;
     MockWETH weth;
 
     function setUp() public {
         // pass weth as constructor param
         weth = new MockWETH();
-        goat = new MockToken();
+        goat = new MockERC20();
         factory = new GoatV1Factory(address(weth));
     }
 

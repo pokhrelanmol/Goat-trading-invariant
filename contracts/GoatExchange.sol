@@ -78,13 +78,13 @@ contract GoatExchange is ReentrancyGuard {
         if (pool.vestingUntil == MAX_UINT32) revert GoatErrors.PresalePeriod();
 
         if (newPool) {
-            // TODO: Make sure reserveBase is updated if launch team wants to add
+            // TODO: Make sure reserveEth is updated if launch team wants to add
             // Some amount of eth
-            pool.virtualEth = launchParams.virtualBase;
-            pool.bootstrapEth = launchParams.bootstrapBase;
+            pool.virtualEth = launchParams.virtualEth;
+            pool.bootstrapEth = launchParams.bootstrapEth;
             pool.vestingUntil = MAX_UINT32;
 
-            if (launchParams.bootstrapBase <= launchParams.initialBase) {
+            if (launchParams.bootstrapEth <= launchParams.initialEth) {
                 pool.vestingUntil = uint32(block.timestamp);
             }
         }
@@ -95,7 +95,7 @@ contract GoatExchange is ReentrancyGuard {
         {
             uint256 tokenBalBefore = IERC20(token).balanceOf(address(this));
             _handleTransferTokens(
-                token, newPool ? launchParams.initialBase : amountWETH, amountTKN, msg.sender, address(this)
+                token, newPool ? launchParams.initialEth : amountWETH, amountTKN, msg.sender, address(this)
             );
             uint256 tokenBalAfter = IERC20(token).balanceOf(address(this));
             // Check for tokens with fee on transfer
@@ -109,7 +109,7 @@ contract GoatExchange is ReentrancyGuard {
             _updatePoolDetails(
                 poolId,
                 pool,
-                newPool ? launchParams.initialBase : amountWETH,
+                newPool ? launchParams.initialEth : amountWETH,
                 amountTKN,
                 fractionalLiquidity,
                 false,
@@ -132,7 +132,7 @@ contract GoatExchange is ReentrancyGuard {
     ) internal returns (uint256 liquidity) {
         // calculate liquidity
         liquidity = Math.min(
-            (wethOptimal * pool.totalSupply) / pool.reserveBase, (tokenOptimal * pool.totalSupply) / pool.reserveToken
+            (wethOptimal * pool.totalSupply) / pool.reserveEth, (tokenOptimal * pool.totalSupply) / pool.reserveToken
         );
         // We record fractional liquidity balance of 25% for limitng withdrawals
         // so we atleast need 4 wei for rounding reasons
@@ -190,18 +190,18 @@ contract GoatExchange is ReentrancyGuard {
         if (liquidity != 0) {
             if (isAdd) {
                 pool.totalSupply += uint112(liquidity);
-                pool.reserveBase += uint112(amountWETH);
+                pool.reserveEth += uint112(amountWETH);
                 pool.reserveToken += uint112(amountTKN);
             } else {
                 pool.totalSupply -= uint112(liquidity);
-                pool.reserveBase -= uint112(amountWETH);
+                pool.reserveEth -= uint112(amountWETH);
                 pool.reserveToken -= uint112(amountTKN);
             }
         } else if (isBuy) {
-            pool.reserveBase += uint112(amountWETH);
+            pool.reserveEth += uint112(amountWETH);
             pool.reserveToken -= uint112(amountTKN);
         } else {
-            pool.reserveBase -= uint112(amountWETH);
+            pool.reserveEth -= uint112(amountWETH);
             pool.reserveToken += uint112(amountTKN);
         }
         // TODO: update kLast here
@@ -216,17 +216,17 @@ contract GoatExchange is ReentrancyGuard {
         uint256 wethMin,
         uint256 tokenMin
     ) internal pure returns (uint256 amountWETH, uint256 amountTKN) {
-        if (pool.reserveBase == 0 && pool.reserveToken == 0) {
+        if (pool.reserveEth == 0 && pool.reserveToken == 0) {
             (amountWETH, amountTKN) = (wethDesired, tokenDesired);
         } else {
-            uint256 amountTKNOptimal = GoatLibrary.quote(wethDesired, pool.reserveBase, pool.reserveToken);
+            uint256 amountTKNOptimal = GoatLibrary.quote(wethDesired, pool.reserveEth, pool.reserveToken);
             if (amountTKNOptimal <= tokenDesired) {
                 if (amountTKNOptimal >= tokenMin) {
                     revert GoatErrors.InsufficientTokenAmount();
                 }
                 (amountWETH, amountTKN) = (wethDesired, amountTKNOptimal);
             } else {
-                uint256 amountWETHOptimal = GoatLibrary.quote(tokenDesired, pool.reserveToken, pool.reserveBase);
+                uint256 amountWETHOptimal = GoatLibrary.quote(tokenDesired, pool.reserveToken, pool.reserveEth);
                 assert(amountWETHOptimal <= wethDesired);
                 if (amountWETHOptimal >= wethMin) {
                     revert GoatErrors.InsufficientWethAmount();
@@ -245,7 +245,7 @@ contract GoatExchange is ReentrancyGuard {
         // TODO: handle a scenario where team wants to remove tokens
         // when there is not enough trades to turn presale to an AMM
 
-        amountWETH = (pool.reserveBase * liquidity) / pool.totalSupply;
+        amountWETH = (pool.reserveEth * liquidity) / pool.totalSupply;
         amountTKN = (pool.reserveToken * liquidity) / pool.totalSupply;
 
         if (amountTKN < tokenMin) revert GoatErrors.InsufficientTokenAmount();
@@ -356,7 +356,7 @@ contract GoatExchange is ReentrancyGuard {
     function isPresale(bytes32 poolId) public view returns (bool presale) {
         GoatTypes.Pool memory pool = pools[poolId];
 
-        presale = pool.reserveBase < (pool.bootstrapEth);
+        presale = pool.reserveEth < (pool.bootstrapEth);
     }
 
     /**
@@ -483,10 +483,10 @@ contract GoatExchange is ReentrancyGuard {
         // Update pool details with fees and reserve changes
         pool.lastTrade = lastTrade;
         if (swapType == 1) {
-            pool.reserveBase += uint112(actualTokenAmountIn - liquidityFees - protocolFees);
+            pool.reserveEth += uint112(actualTokenAmountIn - liquidityFees - protocolFees);
             pool.reserveToken -= uint112(actualAmountOut);
         } else {
-            pool.reserveBase -= uint112(actualAmountOut + liquidityFees + protocolFees);
+            pool.reserveEth -= uint112(actualAmountOut + liquidityFees + protocolFees);
             pool.reserveToken += uint112(actualTokenAmountIn);
         }
         pools[poolId] = pool;
@@ -544,7 +544,7 @@ contract GoatExchange is ReentrancyGuard {
         pendingProtocolFees = protocolFees;
         pool.feesPerTokenStored += uint112((liquidityFees * 1e18) / pool.totalSupply);
 
-        pool.reserveBase += uint112(buyBackShare - (protocolFees + liquidityFees));
+        pool.reserveEth += uint112(buyBackShare - (protocolFees + liquidityFees));
         pool.reserveToken -= uint112(amountExpected);
 
         // Burn goat token

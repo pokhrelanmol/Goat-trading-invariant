@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 contract GoatErrors {
+    error BurnLimitExceeded();
     error Unauthorized();
     error FailedToSendEther();
     error ZeroAddress();
@@ -18,6 +19,7 @@ contract GoatErrors {
     error InsufficientAmountOut();
     error InsufficientVirtualEth();
     error InsufficientLiquidityMinted();
+    error InsufficientLiquidityBurned();
     error MevDetected();
     error MevDetected1();
     error MevDetected2();
@@ -25,4 +27,5 @@ contract GoatErrors {
     error OnlyGov();
     error Receive();
     error PresalePeriod();
+    error WithdrawalCooldownActive();
 }

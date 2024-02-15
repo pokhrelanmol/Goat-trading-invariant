@@ -53,10 +53,10 @@ contract GoatV1Router is ReentrancyGuard {
             if (vars.isNewPair) {
                 // only for the first time
                 vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
-                    initParams.virtualBase, initParams.bootstrapBase, initParams.initialTokenMatch
+                    initParams.virtualEth, initParams.bootstrapEth, initParams.initialTokenMatch
                 );
             }
-            vars.wethAmountInitial = vars.isNewPair ? initParams.initialBase : vars.wethAmount;
+            vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
         }
         {
             vars.pair = GoatV1Factory(FACTORY).getPool(token);
@@ -83,7 +83,7 @@ contract GoatV1Router is ReentrancyGuard {
         if (vars.pair == address(0)) {
             // only for the first time
             vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
-                initParams.virtualBase, initParams.bootstrapBase, initParams.initialTokenMatch
+                initParams.virtualEth, initParams.bootstrapEth, initParams.initialTokenMatch
             );
         }
 
@@ -92,7 +92,7 @@ contract GoatV1Router is ReentrancyGuard {
         IERC20(token).safeTransferFrom(msg.sender, vars.pair, vars.actualTokenAmount);
         IWETH(WETH).deposit{value: ethAmount}();
         IERC20(WETH).safeTransfer(vars.pair, ethAmount);
-        uint256 _wethAmountInitial = vars.isNewPair ? initParams.initialBase : ethAmount;
+        uint256 _wethAmountInitial = vars.isNewPair ? initParams.initialEth : ethAmount;
 
         if (_wethAmountInitial != 0) {
             IERC20(WETH).safeTransferFrom(msg.sender, vars.pair, _wethAmountInitial);
@@ -128,7 +128,7 @@ contract GoatV1Router is ReentrancyGuard {
 
         // @note should we mint liqudity for first liqudity provider?
         if (isNewPair) {
-            (tokenAmount, wethAmount) = (initParams.initialTokenMatch, initParams.virtualBase); // ratio is initialTokenMatch: virtualWethAmount
+            (tokenAmount, wethAmount) = (initParams.initialTokenMatch, initParams.virtualEth); // ratio is initialTokenMatch: virtualWethAmount
         } else {
             //@note this is the block that will be accesed only after the presale period
             (uint256 tokenReserve, uint256 wethReserve) = pair.getReserves();
