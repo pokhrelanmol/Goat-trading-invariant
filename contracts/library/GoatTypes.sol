@@ -44,12 +44,10 @@ contract GoatTypes {
     }
 
     struct InitParams {
-        address liquidityProvider;
-        uint32 lockPeriod;
         uint112 virtualEth;
+        uint112 initialTokenMatch;
         uint112 bootstrapEth;
         uint112 initialEth;
-        uint112 initialTokenMatch;
     }
 
     struct InitialLPInfo {
@@ -68,5 +66,12 @@ contract GoatTypes {
         uint256 wethAmount;
         uint256 liquidity;
         address token;
+    }
+
+    struct LocalVariables_MintLiquidity {
+        uint112 virtualEth;
+        uint112 initialTokenMatch;
+        uint32 vestingUntil;
+        uint256 bootstrapEth;
     }
 }

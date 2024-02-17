@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.19;
+
+import "../library/GoatTypes.sol";
+import "../library/GoatErrors.sol";
 
 contract GoatV1ERC20 {
     // Token metadata
@@ -21,26 +24,28 @@ contract GoatV1ERC20 {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    function _mint(address _to, uint256 _value) public {
+    function _mint(address _to, uint256 _value) internal {
         _totalSupply += _value;
         _balances[_to] += _value;
         emit Transfer(address(0), _to, _value);
     }
 
-    function _burn(address _from, uint256 _value) public {
+    function _burn(address _from, uint256 _value) internal {
         _balances[_from] -= _value;
         _totalSupply -= _value;
         emit Transfer(_from, address(0), _value);
     }
 
-    function _approve(address _owner, address _spender, uint256 _value) public {
+    function _approve(address _owner, address _spender, uint256 _value) internal {
         _allowances[_owner][_spender] = _value;
         emit Approval(_owner, _spender, _value);
     }
 
-    function _transfer(address _from, address _to, uint256 _value) public {
+    function _transfer(address _from, address _to, uint256 _value) internal {
+        _beforeTokenTransfer(_from, _to, _value);
         _balances[_from] -= _value;
         _balances[_to] += _value;
+        _afterTokenTransfer(_from, _to, _value);
         emit Transfer(_from, _to, _value);
     }
 
@@ -66,9 +71,16 @@ contract GoatV1ERC20 {
         return _balances[_owner];
     }
 
-    // Get the amount of tokens that an owner allowance to a spender
+    // Get the value of tokens that an owner allowance to a spender
     function allowance(address _owner, address _spender) public view returns (uint256 remaining) {
         return _allowances[_owner][_spender];
+    }
+
+    function _afterTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
+        // handle liquidity fees update
+    }
+    function _beforeTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
+        // handle initial liquidity provider restrictions
     }
 
     function totalSupply() public view returns (uint256) {

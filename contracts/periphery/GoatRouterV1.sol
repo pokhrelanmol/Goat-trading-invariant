@@ -46,16 +46,17 @@ contract GoatV1Router is ReentrancyGuard {
         vars.token = token; // prevent stack too deep error
         (vars.tokenAmount, vars.wethAmount, vars.isNewPair) =
             _addLiquidity(token, tokenDesired, wethDesired, tokenMin, wethMin, initParams);
+
+        vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
         if (vars.isNewPair) {
             // only for the first time
             vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
-                initParams.virtualEth, initParams.bootstrapEth, initParams.initialTokenMatch
+                initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
             );
         } else {
             vars.actualTokenAmount = vars.tokenAmount;
         }
 
-        vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
         vars.pair = GoatV1Factory(FACTORY).getPool(vars.token);
 
         IERC20(vars.token).safeTransferFrom(msg.sender, vars.pair, vars.actualTokenAmount);
@@ -84,7 +85,7 @@ contract GoatV1Router is ReentrancyGuard {
         if (vars.isNewPair) {
             // only for the first time
             vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
-                initParams.virtualEth, initParams.bootstrapEth, initParams.initialTokenMatch
+                initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
             );
             require(msg.value == initParams.initialEth, "GoatV1Router: INVALID_ETH_AMOUNT");
         } else {
@@ -121,7 +122,6 @@ contract GoatV1Router is ReentrancyGuard {
         GoatV1Pair pool;
         if (vars.pair == address(0)) {
             // First time liqudity provider
-            initParams.liquidityProvider = msg.sender;
             pool = GoatV1Pair(GoatV1Factory(FACTORY).createPair(token, initParams));
             vars.isNewPair = true;
         } else {
@@ -189,11 +189,12 @@ contract GoatV1Router is ReentrancyGuard {
 
     /* ----------------------------- PURE FUNCTIONS ----------------------------- */
 
-    function getActualAmountNeeded(uint256 virtualEth, uint256 bootstrapEth, uint256 initialTokenMatch)
-        public
-        pure
-        returns (uint256 actualTokenAmount)
-    {
-        return GoatLibrary.getActualTokenAmount(virtualEth, bootstrapEth, initialTokenMatch);
+    function getActualAmountNeeded(
+        uint256 virtualEth,
+        uint256 bootstrapEth,
+        uint256 initialEth,
+        uint256 initialTokenMatch
+    ) public pure returns (uint256 actualTokenAmount) {
+        return GoatLibrary.getActualTokenAmount(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
     }
 }

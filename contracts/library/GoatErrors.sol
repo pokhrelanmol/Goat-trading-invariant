@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 contract GoatErrors {
     error BurnLimitExceeded();
+    error BalanceMoreThanBootstrapEth();
     error Unauthorized();
     error FailedToSendEther();
     error ZeroAddress();
@@ -12,6 +13,7 @@ contract GoatErrors {
     error LiquidityLocked();
     error NotEnoughBalance();
     error LiquidityCooldownActive();
+    error LPTransferRestricted();
     error IncorrectTokenAmount();
     error InsufficientWethAmount();
     error InsufficientTokenAmount();

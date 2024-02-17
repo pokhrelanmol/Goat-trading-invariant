@@ -51,8 +51,7 @@ abstract contract BaseTest is Test {
             addLiqParams.to = address(this);
             addLiqParams.deadline = block.timestamp + 1000;
 
-            addLiqParams.initParams =
-                GoatTypes.InitParams(address(this), 0, 10e18, 10e18, sendInitWeth ? 10e18 : 0, 1000e18);
+            addLiqParams.initParams = GoatTypes.InitParams(10e18, 10e18, sendInitWeth ? 10e18 : 0, 1000e18);
         } else {
             addLiqParams.token = address(token);
             addLiqParams.tokenDesired = 1000e18;
@@ -62,7 +61,7 @@ abstract contract BaseTest is Test {
             addLiqParams.to = address(this);
             addLiqParams.deadline = block.timestamp + 1000;
 
-            addLiqParams.initParams = GoatTypes.InitParams(address(0), 0, 0, 0, 0, 0);
+            addLiqParams.initParams = GoatTypes.InitParams(0, 0, 0, 0);
         }
         return addLiqParams;
     }

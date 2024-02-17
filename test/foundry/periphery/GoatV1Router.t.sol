@@ -56,6 +56,7 @@ contract GoatV1RouterTest is BaseTest {
         uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
             addLiqParams.initParams.initialTokenMatch
         );
 

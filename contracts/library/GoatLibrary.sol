@@ -68,18 +68,26 @@ library GoatLibrary {
         amountWETHOut = (actualAmountWETHOut * 9900) / 10000;
     }
 
-    function getActualTokenAmount(uint256 virtualEth, uint256 bootstrapEth, uint256 _initialTokenMatch)
-        internal
-        pure
-        returns (uint256 actualTokenAmount)
-    {
-        // TODO: figure out for a situation when initial liquidity provider is trying to add
-        // some amount of weth along with it.
-        // @note I have not handled precision loss here. Make sure if I need to round it up by 1.
-        uint256 k = virtualEth * _initialTokenMatch;
-        uint256 tokenAmtForPresale = _initialTokenMatch - (k / (virtualEth + bootstrapEth));
+    function getActualTokenAmount(
+        uint256 virtualEth,
+        uint256 bootstrapEth,
+        uint256 initialEth,
+        uint256 initialTokenMatch
+    ) internal pure returns (uint256 actualTokenAmount) {
+        uint256 k = virtualEth * initialTokenMatch;
+        uint256 tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
         uint256 tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
-        actualTokenAmount = tokenAmtForAmm + tokenAmtForPresale;
+
+        if (initialEth != 0) {
+            uint256 quoteTokenAmount = (initialEth * initialTokenMatch) / (virtualEth + initialEth);
+
+            if (tokenAmtForPresale > quoteTokenAmount) {
+                tokenAmtForPresale -= quoteTokenAmount;
+            } else {
+                tokenAmtForPresale = 0;
+            }
+        }
+        actualTokenAmount = tokenAmtForPresale + tokenAmtForAmm;
     }
 
     function getTokenAmountIn() internal pure returns (uint256 amountTokenIn) {}
