@@ -9,6 +9,7 @@ library GoatLibrary {
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) internal pure returns (uint256 amountB) {
         require(amountA > 0, "GoatLibrary: INSUFFICIENT AMOUNT");
         require(reserveA > 0 && reserveB > 0, "GoatLibrary: INSUFFICIENT_LIQUIDITY");
+
         amountB = (amountA * reserveB) / reserveA;
     }
 
@@ -73,12 +74,13 @@ library GoatLibrary {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) internal pure returns (uint256 actualTokenAmount) {
+    ) internal view returns (uint256 actualTokenAmount) {
         uint256 k = virtualEth * initialTokenMatch;
         uint256 tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
         uint256 tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
 
         if (initialEth != 0) {
+            //TODO: change quoteTokenAmount to amountOut
             uint256 quoteTokenAmount = (initialEth * initialTokenMatch) / (virtualEth + initialEth);
 
             if (tokenAmtForPresale > quoteTokenAmount) {

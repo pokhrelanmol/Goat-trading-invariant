@@ -20,7 +20,9 @@ contract GoatV1Router is ReentrancyGuard {
     uint32 private constant MAX_UINT32 = type(uint32).max;
 
     modifier ensure(uint256 deadline) {
-        require(deadline >= block.timestamp, "GoatV1Router: EXPIRED");
+        if (block.timestamp > deadline) {
+            revert GoatErrors.Expired();
+        }
         _;
     }
 
@@ -67,7 +69,7 @@ contract GoatV1Router is ReentrancyGuard {
         return (vars.tokenAmount, vars.wethAmount, vars.liquidity);
     }
 
-    function addLiqudityETH(
+    function addLiquidityETH(
         address token,
         uint256 tokenDesired,
         uint256 tokenMin,
@@ -80,21 +82,24 @@ contract GoatV1Router is ReentrancyGuard {
             revert GoatErrors.WrongToken();
         }
         GoatTypes.LocalVariables_AddLiquidity memory vars;
+        vars.token = token; // prevent stack too deep error
         (vars.tokenAmount, vars.wethAmount, vars.isNewPair) =
             _addLiquidity(token, tokenDesired, msg.value, tokenMin, ethMin, initParams);
+        vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
+
         if (vars.isNewPair) {
             // only for the first time
             vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
                 initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
             );
-            require(msg.value == initParams.initialEth, "GoatV1Router: INVALID_ETH_AMOUNT");
         } else {
             vars.actualTokenAmount = vars.tokenAmount;
         }
-
+        if (msg.value != vars.wethAmountInitial) {
+            revert GoatErrors.InvalidEthAmount();
+        }
+        vars.pair = GoatV1Factory(FACTORY).getPool(vars.token);
         IERC20(token).safeTransferFrom(msg.sender, vars.pair, vars.actualTokenAmount);
-        vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
-
         if (vars.wethAmountInitial != 0) {
             IWETH(WETH).deposit{value: vars.wethAmountInitial}();
             IERC20(WETH).safeTransfer(vars.pair, vars.wethAmountInitial);
@@ -126,7 +131,7 @@ contract GoatV1Router is ReentrancyGuard {
             vars.isNewPair = true;
         } else {
             // @note Is this necessary to check both in pair and here?
-            pool = GoatV1Pair(pool);
+            pool = GoatV1Pair(vars.pair);
             if (pool.vestingUntil() == MAX_UINT32) {
                 revert GoatErrors.PresalePeriod();
             }
@@ -134,11 +139,27 @@ contract GoatV1Router is ReentrancyGuard {
 
         // @note should we mint liqudity for first liqudity provider?
         if (vars.isNewPair) {
-            (vars.tokenAmount, vars.wethAmount) = (initParams.initialTokenMatch, initParams.virtualEth); // ratio is initialTokenMatch: virtualWethAmount
+            // If this block hits then there is two possibilities
+            // 1. initialEth< initParams.bootstrapEth
+            // 2. intialEth== initParams.bootstrapEth
+            //  initialEth > initParams.bootstrapEth will revert in pair, so we don't need to check that
+            if (initParams.initialEth < initParams.bootstrapEth) {
+                //handle case 1
+                // wethAmountInitial == 0 is also handled here
+                (vars.tokenAmount, vars.wethAmount) = (initParams.initialTokenMatch, initParams.virtualEth);
+            } else {
+                // handle case 2
+                vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
+                    initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
+                );
+                (vars.tokenAmount, vars.wethAmount) = (
+                    vars.actualTokenAmount,
+                    initParams.initialEth // we could also have used initParams.bootstrapEth here
+                );
+            }
         } else {
             //@note this is the block that will be accesed only after the presale period
-            (uint256 tokenReserve, uint256 wethReserve) = pool.getReserves();
-
+            (uint256 wethReserve, uint256 tokenReserve) = pool.getReserves();
             uint256 tokenAmountOptimal = GoatLibrary.quote(wethDesired, wethReserve, tokenReserve);
             if (tokenAmountOptimal <= tokenDesired) {
                 if (tokenAmountOptimal < tokenMin) {
@@ -194,7 +215,7 @@ contract GoatV1Router is ReentrancyGuard {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) public pure returns (uint256 actualTokenAmount) {
+    ) public view returns (uint256 actualTokenAmount) {
         return GoatLibrary.getActualTokenAmount(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
     }
 }
