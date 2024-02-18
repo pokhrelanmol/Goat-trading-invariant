@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console2} from "forge-std/Test.sol";
 import {GoatV1Pair} from "../../contracts/exchange/GoatV1Pair.sol";
 import {GoatV1Factory} from "../../contracts/exchange/GoatV1Factory.sol";
 import {GoatV1Router} from "../../contracts/periphery/GoatRouterV1.sol";
@@ -17,7 +17,9 @@ abstract contract BaseTest is Test {
     GoatV1ERC20 public goatToken;
     MockWETH public weth;
     MockERC20 public token;
-    //     Mint weth
+
+    //Users
+    address public lp_1 = makeAddr("lp_1");
 
     struct AddLiqudityParams {
         address token;
@@ -37,10 +39,15 @@ abstract contract BaseTest is Test {
         token = new MockERC20();
         factory = new GoatV1Factory(address(weth));
         router = new GoatV1Router(address(factory), address(weth));
+
+        // Mint tokens
     }
 
-    function addLiquidityParams(bool initial, bool sendInitWeth) public returns (AddLiqudityParams memory) {
-        weth.deposit{value: 10e18}();
+    function addLiquidityParams(
+        bool initial,
+        bool sendInitWeth
+    ) public returns (AddLiqudityParams memory) {
+        weth.deposit{value: 100e18}();
         if (initial) {
             /* ------------------------------- SET PARAMS ------------------------------- */
             addLiqParams.token = address(token);
@@ -51,11 +58,16 @@ abstract contract BaseTest is Test {
             addLiqParams.to = address(this);
             addLiqParams.deadline = block.timestamp + 1000;
 
-            addLiqParams.initParams = GoatTypes.InitParams(10e18, 10e18, sendInitWeth ? 10e18 : 0, 1000e18);
+            addLiqParams.initParams = GoatTypes.InitParams(
+                10e18,
+                10e18,
+                sendInitWeth ? 5e18 : 0,
+                1000e18
+            );
         } else {
             addLiqParams.token = address(token);
-            addLiqParams.tokenDesired = 1000e18;
-            addLiqParams.wethDesired = 10e18;
+            addLiqParams.tokenDesired = 100e18;
+            addLiqParams.wethDesired = 1e18;
             addLiqParams.tokenMin = 0;
             addLiqParams.wethMin = 0;
             addLiqParams.to = address(this);
@@ -63,6 +75,7 @@ abstract contract BaseTest is Test {
 
             addLiqParams.initParams = GoatTypes.InitParams(0, 0, 0, 0);
         }
+        console2.log("We are here");
         return addLiqParams;
     }
 }
