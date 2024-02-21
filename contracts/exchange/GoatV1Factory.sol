@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "./GoatV1Pair.sol";
 import "../library/GoatTypes.sol";
+import "../library/GoatErrors.sol";
 
 contract GoatV1Factory {
     address public immutable weth;
@@ -19,6 +20,7 @@ contract GoatV1Factory {
     constructor(address _weth) {
         weth = _weth;
         baseName = IERC20Metadata(_weth).name();
+        treasury = msg.sender;
     }
 
     function createPair(address token, GoatTypes.InitParams memory params) external returns (address) {
@@ -34,18 +36,24 @@ contract GoatV1Factory {
     }
 
     function setTreasury(address _pendingTreasury) external {
-        require(msg.sender == treasury, "GoatV1Factory: FORBIDDEN");
+        if (msg.sender != treasury) {
+            revert GoatErrors.Forbidden();
+        }
         pendingTreasury = _pendingTreasury;
     }
 
     function acceptTreasury() external {
-        require(msg.sender == pendingTreasury, "GoatV1Factory: FORBIDDEN");
+        if (msg.sender != pendingTreasury) {
+            revert GoatErrors.Forbidden();
+        }
         pendingTreasury = address(0);
         treasury = msg.sender;
     }
 
     function setFeeToTreasury(uint256 _minimumCollectibleFees) external {
-        require(msg.sender == treasury, "GoatV1Factory: FORBIDDEN");
+        if (msg.sender != treasury) {
+            revert GoatErrors.Forbidden();
+        }
         minimumCollectableFees = _minimumCollectibleFees;
     }
 }

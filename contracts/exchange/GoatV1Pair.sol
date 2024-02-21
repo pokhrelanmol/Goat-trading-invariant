@@ -1,27 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
+// library imports
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
+// local imports
 import "../library/GoatErrors.sol";
 import "../library/GoatTypes.sol";
 import "./GoatV1ERC20.sol";
 
-// TODO: restrict intitial liquidity provider from transferring
-// liquidity tokens
+// interfaces
+import "../interfaces/IGoatV1Factory.sol";
 
 contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant MINIMUM_LIQUIDITY = 10 ** 3;
-    uint32 public constant LOCK_PERIOD = 30 days;
+    uint32 private constant _MIN_LOCK_PERIOD = 2 days;
     uint32 public constant VESTING_PERIOD = 30 days;
     uint32 private constant _MAX_UINT32 = type(uint32).max;
-    uint32 private constant THIRTY_DAYS = 30 days;
+    uint32 private constant _THIRTY_DAYS = 30 days;
 
     address public immutable factory;
     uint32 private immutable _genesis;
@@ -40,12 +42,19 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // No need to save it can be used first time to calculate k last
     // and reverse engineer to get actual token match
 
-    uint256 private _bootstrapEth;
-    // updates on liquidity changes
-    uint256 private _kLast;
+    uint112 private _bootstrapEth;
+    // total lp fees that are not withdrwan
+    uint112 private _pendingLiquidityFees;
+
+    // Scaled fees per token stored by 1e18
+    uint184 public feesPerTokenStored;
+    // this variable can store >4500 ether
+    uint72 private _pendingProtocolFees;
 
     mapping(address => uint256) private _presaleBalances;
     mapping(address => uint32) private _locked;
+    mapping(address => uint256) public lpFees;
+    mapping(address => uint256) public feesPerTokenPaid;
 
     GoatTypes.InitialLPInfo private _initialLPInfo;
 
@@ -76,12 +85,38 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function _update(uint256 balanceEth, uint256 balanceToken) internal {
         // Update token reserves and other necessary data
-        _reserveEth = uint112(balanceEth);
+        _reserveEth = uint112(balanceEth - (_pendingLiquidityFees + _pendingProtocolFees));
         _reserveToken = uint112(balanceToken);
     }
 
-    function _handleFirstLiquidityMint(uint256 tokenDepositAmount) internal {
-        // Handle first liquidity mint
+    function _handleFees(uint256 amountWethIn, uint256 amountWethOut) internal returns (uint256 feesCollected) {
+        // here either amountWethIn or amountWethOut will be zero
+        if (amountWethIn != 0) {
+            feesCollected = (amountWethIn * 100) / 10000;
+        } else {
+            feesCollected = (amountWethOut * 10000) / 9900 - amountWethOut;
+        }
+        // lp fess is fixed 40 bps
+        uint256 feesLp = (feesCollected * 40) / 100;
+
+        uint256 pendingProtocolFees = _pendingProtocolFees;
+
+        unchecked {
+            _pendingLiquidityFees += uint112(feesLp);
+            pendingProtocolFees += uint184(feesCollected - feesLp);
+            // update fees per token stored
+            feesPerTokenStored += uint168((feesLp * 1e18) / totalSupply());
+        }
+
+        IGoatV1Factory _factory = IGoatV1Factory(factory);
+        uint256 minCollectableFees = _factory.minimumCollectableFees();
+        address treasury = _factory.treasury();
+
+        if (pendingProtocolFees > minCollectableFees) {
+            pendingProtocolFees = 0;
+            IERC20(_weth).safeTransfer(treasury, pendingProtocolFees);
+        }
+        _pendingProtocolFees = uint72(pendingProtocolFees);
     }
 
     function _handleMevCheck(bool isBuy) internal returns (uint32 lastTrade) {
@@ -113,7 +148,9 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     function _updatePresale(address user, uint256 amount, bool isBuy) internal {
         //
         if (isBuy) {
-            _presaleBalances[user] += amount;
+            unchecked {
+                _presaleBalances[user] += amount;
+            }
         } else {
             _presaleBalances[user] -= amount;
         }
@@ -121,7 +158,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function mint(address to) external nonReentrant returns (uint256 liquidity) {
         uint256 totalSupply_ = totalSupply();
-        uint256 amountBase;
+        uint256 amountWeth;
         uint256 amountToken;
         uint256 balanceEth = IERC20(_weth).balanceOf(address(this));
         uint256 balanceToken = IERC20(_token).balanceOf(address(this));
@@ -162,20 +199,22 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             _updateInitialLpInfo(liquidity, to, false);
         } else {
             (uint256 reserveEth, uint256 reserveToken) = getReserves();
-            amountBase = balanceEth - reserveEth;
+            amountWeth = balanceEth - reserveEth - _pendingLiquidityFees - _pendingProtocolFees;
             amountToken = balanceToken - reserveToken;
-            liquidity = Math.min((amountBase * totalSupply_) / reserveEth, (amountToken * totalSupply_) / reserveToken);
+            liquidity = Math.min((amountWeth * totalSupply_) / reserveEth, (amountToken * totalSupply_) / reserveToken);
         }
 
+        _updateFeeRewards(to);
         if (totalSupply_ == 0) {
             _mint(address(0), MINIMUM_LIQUIDITY);
         }
 
-        _locked[to] = uint32(block.timestamp + LOCK_PERIOD);
+        _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
         _mint(to, liquidity);
 
         _update(balanceEth, balanceToken);
-        emit Mint(msg.sender, amountBase, amountToken);
+
+        emit Mint(msg.sender, amountWeth, amountToken);
     }
 
     function _handleInitialLiquidityProviderChecks(uint256 liquidity) internal view {
@@ -190,8 +229,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     function _updateInitialLpInfo(uint256 liquidity, address lp, bool isBurn) internal {
-        // TODO: refactor this function
-        // Update initial liquidity provider info
         GoatTypes.InitialLPInfo memory info = _initialLPInfo;
         if (isBurn) {
             if (lp == info.liquidityProvider) {
@@ -203,6 +240,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             info.withdrawlLeft = 4;
             info.liquidityProvider = lp;
         }
+        // Update initial liquidity provider info
         _initialLPInfo = info;
     }
 
@@ -226,7 +264,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (amountWeth == 0 || amountToken == 0) {
             revert GoatErrors.InsufficientLiquidityBurned();
         }
+
+        _updateFeeRewards(from);
         _burn(address(this), liquidity);
+
         // Transfer liquidity tokens to the user
         IERC20(_weth).safeTransfer(from, amountWeth);
         IERC20(_token).safeTransfer(from, amountToken);
@@ -238,112 +279,209 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         emit Burn(msg.sender, amountWeth, amountToken, from);
     }
 
-    // Call from a safe contract ensuring critical validations are performed.
-    function swap(uint256 amountTokenOut, uint256 amountBaseOut, address to) external {
-        // General swap like univ2
-        // check for mev
-        // calculate amount out for presale
-        // calculate amount out for amm
-        // burn liquidity portion form initial user if bootstrapEth == balanceETH
-        // update fees
-        // transfer fees to external contract for buybacks and all if fees collected > 0.1 ether
-        if (amountTokenOut == 0 && amountBaseOut == 0) {
+    // should be called from a contract with safety checks
+    function swap(uint256 amountTokenOut, uint256 amountWethOut, address to) external {
+        if (amountTokenOut == 0 && amountWethOut == 0) {
             revert GoatErrors.InsufficientOutputAmount();
         }
-        if (amountTokenOut != 0 || amountBaseOut != 0) {
+        if (amountTokenOut != 0 && amountWethOut != 0) {
             revert GoatErrors.MultipleOutputAmounts();
         }
+        GoatTypes.LocalVariables_Swap memory swapVars;
+        swapVars.isBuy = amountWethOut > 0 ? false : true;
+        // check for mev
+        _handleMevCheck(swapVars.isBuy);
 
-        bool isBuy = amountBaseOut > 0 ? false : true;
-        _handleMevCheck(isBuy);
+        (swapVars.actualReserveEth, swapVars.actualReserveToken) = _getActualReserves();
 
-        (uint112 reserveEth, uint112 reserveToken) = getReserves();
-
-        if (amountTokenOut > reserveToken || amountBaseOut > reserveEth) {
+        if (amountTokenOut > swapVars.actualReserveToken || amountWethOut > swapVars.actualReserveEth) {
             revert GoatErrors.InsufficientAmountOut();
         }
-        // What should happen here?
-        // 1. Check if the user has presale balance because only presale participants
-        // can swap back during the presale period
-        // 2. make sure the fees are always stored in the contract and its always in weth
-        // so if the swap is buy or sale fees will be taken always in weth amount
 
-        // TODO: I need to transfer fees to the treasury if it reaches a certain amount.
-        uint256 balanceEth;
-        uint256 balanceToken;
-        {
-            address token = _token;
-            address weth = _weth;
-
-            // Optimistically send tokens out
-            if (amountTokenOut > 0) {
-                IERC20(token).safeTransfer(to, amountTokenOut);
-            }
-            if (amountBaseOut > 0) {
-                IERC20(weth).safeTransfer(to, amountBaseOut);
-            }
-
-            balanceEth = IERC20(weth).balanceOf(address(this));
-            balanceToken = IERC20(token).balanceOf(address(this));
-        }
-        // Think about fees in here
-        uint256 amountBaseIn =
-            (balanceEth > (_reserveEth - amountBaseOut)) ? balanceEth - (_reserveEth - amountBaseOut) : 0;
-
-        uint256 amountTokenIn =
-            (balanceToken > (_reserveToken - amountTokenOut)) ? balanceToken - (_reserveToken - amountTokenOut) : 0;
-
-        // if presale update the presale balance of the buyer
-        {
-            uint256 amount = isBuy ? amountTokenOut : amountTokenIn;
-            if (_vestingUntil == _MAX_UINT32) _updatePresale(to, amount, isBuy);
-        }
-    }
-
-    function getReserves() public view returns (uint112 reserveEth, uint112 reserveToken) {
-        // Calculate reserves and return
-        if (_vestingUntil != _MAX_UINT32) {
-            reserveEth = _reserveEth;
-            reserveToken = _reserveToken;
+        if (swapVars.isBuy) {
+            swapVars.amountWethIn = IERC20(_weth).balanceOf(address(this)) - swapVars.actualReserveEth
+                - _pendingLiquidityFees - _pendingProtocolFees;
+            // optimistically send tokens out
+            IERC20(_token).safeTransfer(to, amountTokenOut);
         } else {
-            reserveEth = _virtualEth + _reserveEth; // this is all good
-            reserveToken = uint112((uint256(_virtualEth) * uint256(_initialTokenMatch)) / uint256(reserveEth));
-            // 10e18 * 1000e18 / 15e18 = 666.666666666666666666
+            swapVars.amountTokenIn = IERC20(_token).balanceOf(address(this)) - swapVars.actualReserveToken;
+            // optimistically send weth out
+            IERC20(_weth).safeTransfer(to, amountWethOut);
+        }
+        swapVars.feesCollected = _handleFees(swapVars.amountWethIn, amountWethOut);
+
+        swapVars.tokenAmount = swapVars.isBuy ? amountTokenOut : swapVars.amountTokenIn;
+        swapVars.vestingUntil = _vestingUntil;
+
+        // We store details of participants so that we only allow users who have
+        // swap back tokens who have bought in the vesting period.
+        if (swapVars.vestingUntil > block.timestamp - _THIRTY_DAYS) {
+            _updatePresale(to, swapVars.tokenAmount, swapVars.isBuy);
+        }
+
+        if (swapVars.isBuy) {
+            swapVars.amountWethIn -= swapVars.feesCollected;
+        } else {
+            unchecked {
+                amountWethOut += swapVars.feesCollected;
+            }
+        }
+        swapVars.finalReserveEth = swapVars.isBuy
+            ? swapVars.actualReserveEth + swapVars.amountWethIn
+            : swapVars.actualReserveEth - amountWethOut;
+        swapVars.finalReserveToken = swapVars.isBuy
+            ? swapVars.actualReserveToken - amountTokenOut
+            : swapVars.actualReserveToken + swapVars.amountTokenIn;
+
+        swapVars.bootstrapEth = _bootstrapEth;
+        if (swapVars.vestingUntil == _MAX_UINT32 && swapVars.finalReserveEth >= swapVars.bootstrapEth) {
+            // at this point pool should be changed to an AMM
+            _checkAndConvertPool(swapVars.finalReserveEth, swapVars.finalReserveEth);
+        } else {
+            // check for K
+            swapVars.initialTokenMatch = _initialTokenMatch;
+            swapVars.virtualEth = _virtualEth;
+
+            (swapVars.virtualEthReserveBefore, swapVars.virtualTokenReserveBefore) = _getReserves(
+                swapVars.vestingUntil,
+                swapVars.actualReserveEth,
+                swapVars.actualReserveToken,
+                swapVars.virtualEth,
+                swapVars.initialTokenMatch
+            );
+            (swapVars.virtualEthReserveAfter, swapVars.virtualTokenReserveAfter) = _getReserves(
+                swapVars.vestingUntil,
+                swapVars.finalReserveEth,
+                swapVars.finalReserveToken,
+                swapVars.virtualEth,
+                swapVars.initialTokenMatch
+            );
+            if (
+                swapVars.virtualEthReserveBefore * swapVars.virtualTokenReserveBefore
+                    < swapVars.virtualEthReserveAfter * swapVars.virtualTokenReserveAfter
+            ) {
+                revert GoatErrors.KInvariant();
+            }
+        }
+        _update(swapVars.actualReserveEth, swapVars.actualReserveToken);
+    }
+
+    function _getActualReserves() internal view returns (uint112 reserveEth, uint112 reserveToken) {
+        reserveEth = _reserveEth;
+        reserveToken = _reserveToken;
+    }
+
+    function _getReserves(
+        uint32 vestingUntil_,
+        uint256 ethReserve,
+        uint256 tokenReserve,
+        uint256 virtualEth,
+        uint256 initialTokenMatch
+    ) internal pure returns (uint112 reserveEth, uint112 reserveToken) {
+        if (vestingUntil_ != _MAX_UINT32) {
+            reserveEth = uint112(ethReserve);
+            reserveToken = uint112(tokenReserve);
+        } else {
+            reserveEth = uint112(virtualEth + ethReserve);
+            reserveToken = uint112((virtualEth * initialTokenMatch) / reserveEth);
         }
     }
 
+    /// @notice returns actual reserves if pool has turned into an AMM else returns virtual reserves
+    function getReserves() public view returns (uint112 reserveEth, uint112 reserveToken) {
+        (reserveEth, reserveToken) =
+            _getReserves(_vestingUntil, _reserveEth, _reserveToken, _virtualEth, _initialTokenMatch);
+    }
+
+    // this function converts the pool to an AMM with less liquidity and removes
+    // the excess token from the pool
     function withdrawExcessToken() external {
-        if (msg.sender != _initialLPInfo.liquidityProvider) {
+        uint256 timestamp = block.timestamp;
+        // initial liquidty provider can call this function after 30 days from genesis
+        if (_genesis + _THIRTY_DAYS > timestamp) revert GoatErrors.PresaleDeadlineActive();
+        if (_vestingUntil != _MAX_UINT32) {
+            revert GoatErrors.ActionNotAllowed();
+        }
+
+        address initialLiquidityProvider = _initialLPInfo.liquidityProvider;
+        if (msg.sender != initialLiquidityProvider) {
             revert GoatErrors.Unauthorized();
         }
-        uint256 timestamp = block.timestamp;
-        address initialLiquidityProvider = _initialLPInfo.liquidityProvider;
-        // initial liquidty provider can call this function after
-        if (_genesis + THIRTY_DAYS > timestamp) revert GoatErrors.PresaleDeadlineActive();
 
         // as bootstrap eth is not met we consider reserve eth as bootstrap eth
-        // and turn presale into an amm will less liquidity.
+        // and turn presale into an amm with less liquidity.
         uint256 reserveEth = _reserveEth;
         uint256 bootstrapEth = reserveEth;
 
+        // if we know token amount for AMM we can remove excess tokens that are staying in this contract
         (, uint256 tokenAmtForAmm) =
             _tokenAmountsForLiquidityBootstrap(_virtualEth, bootstrapEth, reserveEth, _initialTokenMatch);
+
         IERC20 token = IERC20(_token);
         uint256 poolTokenBalance = token.balanceOf(address(this));
 
         uint256 amountToTransferBack = poolTokenBalance - tokenAmtForAmm;
 
-        _vestingUntil = uint32(block.timestamp);
+        _burnLiquidityAndConvertToAmm(reserveEth, tokenAmtForAmm);
+
+        // transfer excess token to the initial liquidity provider
+        token.safeTransfer(initialLiquidityProvider, amountToTransferBack);
+
+        // update bootstrap eth because original bootstrap eth was not met and
+        // eth we raised until this point should be considered as bootstrap eth
+        _bootstrapEth = uint112(bootstrapEth);
+
+        _update(_reserveEth, tokenAmtForAmm);
+    }
+
+    function _burnLiquidityAndConvertToAmm(uint256 actualEthReserve, uint256 actualTokenReserve) internal {
+        address initialLiquidityProvider = _initialLPInfo.liquidityProvider;
+
         uint256 initialLPBalance = balanceOf(initialLiquidityProvider);
 
-        uint256 liquidity = Math.sqrt(tokenAmtForAmm * reserveEth);
+        uint256 liquidity = Math.sqrt(actualTokenReserve * actualEthReserve);
 
         uint256 liquidityToBurn = initialLPBalance - liquidity;
 
-        _burn(initialLiquidityProvider, liquidityToBurn);
         _updateInitialLpInfo(liquidityToBurn, initialLiquidityProvider, true);
+        // @note can I read balanceOf just once? :thinking_face
+        _updateFeeRewards(initialLiquidityProvider);
+        _burn(initialLiquidityProvider, liquidityToBurn);
+        _vestingUntil = uint32(block.timestamp);
+    }
 
-        token.safeTransfer(initialLiquidityProvider, amountToTransferBack);
+    function _checkAndConvertPool(uint256 actualReserveEth, uint256 actualReserveToken) internal {
+        uint256 tokenAmtForAmm;
+        uint256 kForAmm;
+        if (actualReserveEth >= _bootstrapEth) {
+            (, tokenAmtForAmm) = _tokenAmountsForLiquidityBootstrap(_virtualEth, _bootstrapEth, 0, _initialTokenMatch);
+            kForAmm = _bootstrapEth * tokenAmtForAmm;
+        }
+        uint256 actualK = actualReserveEth * actualReserveToken;
+        if (actualK < kForAmm) {
+            revert GoatErrors.KInvariant();
+        }
+        _burnLiquidityAndConvertToAmm(actualReserveEth, actualReserveToken);
+    }
+
+    function withdrawFees(address to) external {
+        uint256 feesCollected = lpFees[to];
+        lpFees[to] = 0;
+        uint256 feesPerToken = feesPerTokenStored - feesPerTokenPaid[to];
+
+        feesPerTokenPaid[to] = feesPerTokenStored;
+
+        uint256 feesAccured = (balanceOf(to) * feesPerToken) / 1e18;
+
+        uint256 totalFees = feesCollected + feesAccured;
+
+        if (totalFees != 0) {
+            IERC20(_weth).safeTransfer(to, totalFees);
+        }
+
+        // update pending liquidity fees
+        _pendingLiquidityFees -= uint112(totalFees);
+        // is there a need to check if weth balance is in sync with reserve and fees?
     }
 
     function _tokenAmountsForLiquidityBootstrap(
@@ -375,21 +513,33 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // tokenAmtForAmm += 1;
     }
 
-    // Implement after token transfers for liqudity rewards
-    function _afterTokenTransfer(address from, address to, uint256 amount) internal override {
-        // handle fees update
-    }
-
-    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
+    function _beforeTokenTransfer(address from, address to, uint256) internal override {
         // handle initial liquidity provider checks
         GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
         if (lpInfo.liquidityProvider == from || lpInfo.liquidityProvider == to) {
             revert GoatErrors.LPTransferRestricted();
         }
+        _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
+
+        _updateFeeRewards(from);
+        _updateFeeRewards(to);
     }
 
-    function token0() external view returns (address) {
-        return _token < _weth ? _token : _weth;
+    function _updateFeeRewards(address lp) internal {
+        // save for multiple reads
+        uint256 _feesPerTokenStored = feesPerTokenStored;
+        lpFees[lp] = _earned(lp, _feesPerTokenStored);
+        feesPerTokenPaid[lp] = _feesPerTokenStored;
+    }
+
+    function _earned(address lp, uint256 _feesPerTokenStored) internal view returns (uint256) {
+        uint256 feesPerToken = _feesPerTokenStored - feesPerTokenPaid[lp];
+        uint256 feesAccured = (balanceOf(lp) * feesPerToken) / 1e18;
+        return lpFees[lp] + feesAccured;
+    }
+
+    function earned(address lp) external view returns (uint256) {
+        return _earned(lp, feesPerTokenStored);
     }
 
     function vestingUntil() external view returns (uint32 vestingUntil_) {
@@ -397,10 +547,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (vestingUntil_ != _MAX_UINT32) {
             vestingUntil_ += VESTING_PERIOD;
         }
-    }
-
-    function token1() external view returns (address) {
-        return _token < _weth ? _weth : _token;
     }
 
     function getStateInfo()

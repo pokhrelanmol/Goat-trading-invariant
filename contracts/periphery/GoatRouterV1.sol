@@ -52,7 +52,7 @@ contract GoatV1Router is ReentrancyGuard {
         vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
         if (vars.isNewPair) {
             // only for the first time
-            vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
+            vars.actualTokenAmount = GoatLibrary.getActualBootstrapTokenAmount(
                 initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
             );
         } else {
@@ -89,7 +89,7 @@ contract GoatV1Router is ReentrancyGuard {
 
         if (vars.isNewPair) {
             // only for the first time
-            vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
+            vars.actualTokenAmount = GoatLibrary.getActualBootstrapTokenAmount(
                 initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
             );
         } else {
@@ -149,7 +149,7 @@ contract GoatV1Router is ReentrancyGuard {
                 (vars.tokenAmount, vars.wethAmount) = (initParams.initialTokenMatch, initParams.virtualEth);
             } else {
                 // handle case 2
-                vars.actualTokenAmount = GoatLibrary.getActualTokenAmount(
+                vars.actualTokenAmount = GoatLibrary.getActualBootstrapTokenAmount(
                     initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
                 );
                 (vars.tokenAmount, vars.wethAmount) = (
@@ -216,6 +216,6 @@ contract GoatV1Router is ReentrancyGuard {
         uint256 initialEth,
         uint256 initialTokenMatch
     ) public view returns (uint256 actualTokenAmount) {
-        return GoatLibrary.getActualTokenAmount(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
+        return GoatLibrary.getActualBootstrapTokenAmount(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
     }
 }

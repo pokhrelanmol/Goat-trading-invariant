@@ -2,10 +2,12 @@
 pragma solidity 0.8.19;
 
 contract GoatErrors {
+    error ActionNotAllowed();
     error BalanceMoreThanBootstrapEth();
     error BurnLimitExceeded();
     error Expired();
     error FailedToSendEther();
+    error Forbidden();
     error GoatPoolDoesNotExist();
     error GoatV1Forbidden();
     error IncorrectTokenAmount();
@@ -17,6 +19,7 @@ contract GoatErrors {
     error InsufficientVirtualEth();
     error InsufficientWethAmount();
     error InvalidEthAmount();
+    error KInvariant();
     error LiquidityCooldownActive();
     error LiquidityLocked();
     error LPTransferRestricted();

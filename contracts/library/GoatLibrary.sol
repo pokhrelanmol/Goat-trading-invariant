@@ -69,27 +69,43 @@ library GoatLibrary {
         amountWETHOut = (actualAmountWETHOut * 9900) / 10000;
     }
 
-    function getActualTokenAmount(
+    function getActualBootstrapTokenAmount(
         uint256 virtualEth,
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) internal view returns (uint256 actualTokenAmount) {
+    ) internal pure returns (uint256 actualTokenAmount) {
+        (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) =
+            _getTokenAmountsForPresaleAndAmm(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
+        actualTokenAmount = tokenAmtForPresale + tokenAmtForAmm;
+    }
+
+    function getTokenAmountsForPresaleAndAmm(
+        uint256 virtualEth,
+        uint256 bootstrapEth,
+        uint256 initialEth,
+        uint256 initialTokenMatch
+    ) internal pure returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) {
+        (tokenAmtForPresale, tokenAmtForAmm) =
+            _getTokenAmountsForPresaleAndAmm(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
+    }
+
+    function _getTokenAmountsForPresaleAndAmm(
+        uint256 virtualEth,
+        uint256 bootstrapEth,
+        uint256 initialEth,
+        uint256 initialTokenMatch
+    ) private pure returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) {
         uint256 k = virtualEth * initialTokenMatch;
-        uint256 tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
-        uint256 tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
+        tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
+        tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
 
         if (initialEth != 0) {
-            //TODO: change quoteTokenAmount to amountOut
-            uint256 quoteTokenAmount = (initialEth * initialTokenMatch) / (virtualEth + initialEth);
-
-            if (tokenAmtForPresale > quoteTokenAmount) {
-                tokenAmtForPresale -= quoteTokenAmount;
-            } else {
-                tokenAmtForPresale = 0;
-            }
+            uint256 numerator = (initialEth * initialTokenMatch);
+            uint256 denominator = virtualEth + initialEth;
+            uint256 tokenAmountOut = numerator / denominator;
+            tokenAmtForPresale -= tokenAmountOut;
         }
-        actualTokenAmount = tokenAmtForPresale + tokenAmtForAmm;
     }
 
     function getTokenAmountIn() internal pure returns (uint256 amountTokenIn) {}

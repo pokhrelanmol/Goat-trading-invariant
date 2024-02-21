@@ -45,7 +45,6 @@ contract GoatV1ERC20 {
         _beforeTokenTransfer(_from, _to, _value);
         _balances[_from] -= _value;
         _balances[_to] += _value;
-        _afterTokenTransfer(_from, _to, _value);
         emit Transfer(_from, _to, _value);
     }
 
@@ -76,9 +75,6 @@ contract GoatV1ERC20 {
         return _allowances[_owner][_spender];
     }
 
-    function _afterTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
-        // handle liquidity fees update
-    }
     function _beforeTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
         // handle initial liquidity provider restrictions
     }
