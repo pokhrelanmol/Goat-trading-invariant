@@ -51,8 +51,8 @@ contract GoatV1ERC20 {
     }
 
     function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {
-        if (_allowances[msg.sender][_to] != type(uint256).max) {
-            _allowances[msg.sender][_to] -= _value;
+        if (_allowances[_from][msg.sender] != type(uint256).max) {
+            _allowances[_from][msg.sender] -= _value;
         }
         _transfer(_from, _to, _value);
         return true;
