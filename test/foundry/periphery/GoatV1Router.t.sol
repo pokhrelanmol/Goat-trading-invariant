@@ -390,7 +390,6 @@ contract GoatV1RouterTest is BaseTest {
             uint32 vestingUntil,
             uint32 lastTrade,
             uint256 bootstrapEth,
-            uint256 kLast,
             uint32 genesis
         ) = pair.getStateInfo();
 
@@ -401,7 +400,6 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(vestingUntil, type(uint32).max);
         assertEq(lastTrade, 0);
         assertEq(bootstrapEth, 10e18);
-        assertEq(kLast, 0); // @audit do we need to set this?
         assertEq(genesis, block.timestamp);
         assertEq(pair.getPresaleBalance(addLiqParams.to), 0);
         GoatTypes.InitialLPInfo memory lpInfo = pair.getInitialLPInfo();

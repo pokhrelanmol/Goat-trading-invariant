@@ -24,6 +24,7 @@ contract GoatV1Factory {
     }
 
     function createPair(address token, GoatTypes.InitParams memory params) external returns (address) {
+        // TODO: check params
         bytes32 _salt = keccak256(abi.encodePacked(token, weth));
         GoatV1Pair pair = new GoatV1Pair{ salt: _salt }();
         pair.initialize(token, weth, baseName, params);

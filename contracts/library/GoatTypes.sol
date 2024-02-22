@@ -72,6 +72,7 @@ contract GoatTypes {
         uint112 virtualEth;
         uint112 initialTokenMatch;
         uint256 bootstrapEth;
+        bool isFirstMint;
     }
 
     struct LocalVariables_Swap {

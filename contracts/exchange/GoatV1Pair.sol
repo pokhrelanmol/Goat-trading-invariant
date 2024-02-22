@@ -16,6 +16,9 @@ import "./GoatV1ERC20.sol";
 // interfaces
 import "../interfaces/IGoatV1Factory.sol";
 
+// TODO: remove this later
+import {console2} from "forge-std/Test.sol";
+
 contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -91,12 +94,14 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function _handleFees(uint256 amountWethIn, uint256 amountWethOut) internal returns (uint256 feesCollected) {
         // here either amountWethIn or amountWethOut will be zero
+
+        // fees collected will be 100 bps of the weth amount
         if (amountWethIn != 0) {
             feesCollected = (amountWethIn * 100) / 10000;
         } else {
             feesCollected = (amountWethOut * 10000) / 9900 - amountWethOut;
         }
-        // lp fess is fixed 40 bps
+        // lp fess is fixed 40% of the fees collected of total 100 bps
         uint256 feesLp = (feesCollected * 40) / 100;
 
         uint256 pendingProtocolFees = _pendingProtocolFees;
@@ -194,12 +199,16 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 uint32 timestamp = uint32(block.timestamp);
                 _vestingUntil = timestamp;
             }
-            _updateInitialLpInfo(liquidity, to, false);
+            mintVars.isFirstMint = true;
         } else {
             (uint256 reserveEth, uint256 reserveToken) = getReserves();
             amountWeth = balanceEth - reserveEth - _pendingLiquidityFees - _pendingProtocolFees;
             amountToken = balanceToken - reserveToken;
             liquidity = Math.min((amountWeth * totalSupply_) / reserveEth, (amountToken * totalSupply_) / reserveToken);
+        }
+
+        if (mintVars.isFirstMint || to == _initialLPInfo.liquidityProvider) {
+            _updateInitialLpInfo(liquidity, to, false);
         }
 
         _updateFeeRewards(to);
@@ -223,11 +232,13 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // check for actual lp constraints
         GoatTypes.InitialLPInfo memory info = _initialLPInfo;
         uint256 timestamp = block.timestamp;
-        if (liquidity > info.fractionalBalance) {
-            revert GoatErrors.BurnLimitExceeded();
-        }
+
         if ((timestamp - 1 weeks) < info.lastWithdraw) {
             revert GoatErrors.WithdrawalCooldownActive();
+        }
+
+        if (liquidity > info.fractionalBalance) {
+            revert GoatErrors.BurnLimitExceeded();
         }
     }
 
@@ -235,7 +246,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         GoatTypes.InitialLPInfo memory info = _initialLPInfo;
         if (isBurn) {
             if (lp == info.liquidityProvider) {
-                info.fractionalBalance = uint112(info.fractionalBalance - (liquidity / 4));
+                info.lastWithdraw = uint32(block.timestamp);
                 info.withdrawlLeft -= 1;
             }
         } else {
@@ -520,10 +531,13 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     function _beforeTokenTransfer(address from, address to, uint256) internal override {
         // handle initial liquidity provider checks
         GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
-        if (lpInfo.liquidityProvider == from || lpInfo.liquidityProvider == to) {
+        // only allow address(this) to recieve lp tokens from initial liquidity
+        if ((from == lpInfo.liquidityProvider && to != address(this)) || lpInfo.liquidityProvider == to) {
             revert GoatErrors.LPTransferRestricted();
         }
-        _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
+        if (to != address(this)) {
+            _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
+        }
 
         _updateFeeRewards(from);
         _updateFeeRewards(to);
@@ -564,7 +578,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             uint32 vestingUntil_,
             uint32 lastTrade,
             uint256 bootstrapEth,
-            uint256 kLast,
             uint32 genesis
         )
     {
@@ -575,7 +588,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         vestingUntil_ = _vestingUntil;
         lastTrade = _lastTrade;
         bootstrapEth = _bootstrapEth;
-        kLast = kLast;
         genesis = _genesis;
     }
 

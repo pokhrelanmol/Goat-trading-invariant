@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import "../library/GoatTypes.sol";
-import "../library/GoatErrors.sol";
-
 contract GoatV1ERC20 {
     // Token metadata
 
