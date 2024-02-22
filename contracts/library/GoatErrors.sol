@@ -3,7 +3,6 @@ pragma solidity 0.8.19;
 
 contract GoatErrors {
     error ActionNotAllowed();
-    error BalanceMoreThanBootstrapEth();
     error BurnLimitExceeded();
     error Expired();
     error FailedToSendEther();
@@ -33,6 +32,7 @@ contract GoatErrors {
     error PresaleDeadlineActive();
     error PresalePeriod();
     error Receive();
+    error SupplyMoreThanBootstrapEth();
     error Unauthorized();
     error WithdrawalCooldownActive();
     error WrongToken();

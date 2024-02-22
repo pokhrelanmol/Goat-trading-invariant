@@ -69,10 +69,8 @@ contract GoatTypes {
     }
 
     struct LocalVariables_MintLiquidity {
-        // @note i changed this from uint112 to uint256, because i was getting overview when doing sqrt
         uint112 virtualEth;
         uint112 initialTokenMatch;
-        uint32 vestingUntil;
         uint256 bootstrapEth;
     }
 

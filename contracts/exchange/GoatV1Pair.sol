@@ -167,7 +167,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         mintVars.virtualEth = _virtualEth;
         mintVars.initialTokenMatch = _initialTokenMatch;
-        mintVars.vestingUntil = _vestingUntil;
         mintVars.bootstrapEth = _bootstrapEth;
 
         if (_vestingUntil == _MAX_UINT32) {
@@ -175,7 +174,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             if (totalSupply_ > 0) revert GoatErrors.PresalePeriod();
             // don't allow to send more eth than bootstrap eth
             if (balanceEth > _bootstrapEth) {
-                revert GoatErrors.BalanceMoreThanBootstrapEth();
+                revert GoatErrors.SupplyMoreThanBootstrapEth();
             }
 
             // @note make sure balance token is equal to expected token amount
@@ -194,7 +193,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 liquidity = Math.sqrt(balanceEth * tokenAmtForAmm) - MINIMUM_LIQUIDITY;
                 uint32 timestamp = uint32(block.timestamp);
                 _vestingUntil = timestamp;
-                mintVars.vestingUntil = timestamp;
             }
             _updateInitialLpInfo(liquidity, to, false);
         } else {
@@ -218,6 +216,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     function _handleInitialLiquidityProviderChecks(uint256 liquidity) internal view {
+        // this check is only needed here because lp's won't be able to add
+        // liquidity until the pool turns to an AMM
+        if (_vestingUntil == _MAX_UINT32) revert GoatErrors.PresalePeriod();
+
+        // check for actual lp constraints
         GoatTypes.InitialLPInfo memory info = _initialLPInfo;
         uint256 timestamp = block.timestamp;
         if (liquidity > info.fractionalBalance) {
@@ -249,6 +252,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (_locked[from] > block.timestamp) {
             revert GoatErrors.LiquidityLocked();
         }
+
         uint256 liquidity = balanceOf(address(this));
         if (from == _initialLPInfo.liquidityProvider) {
             _handleInitialLiquidityProviderChecks(liquidity);
@@ -575,15 +579,15 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         genesis = _genesis;
     }
 
-    function getPresaleBalance(address user) external view returns (uint256) {
-        return _presaleBalances[user];
-    }
-
     function getInitialLPInfo() external view returns (GoatTypes.InitialLPInfo memory) {
         return _initialLPInfo;
     }
 
-    function getLocked(address user) external view returns (uint32) {
+    function getPresaleBalance(address user) external view returns (uint256) {
+        return _presaleBalances[user];
+    }
+
+    function lockedUntil(address user) external view returns (uint32) {
         return _locked[user];
     }
 }

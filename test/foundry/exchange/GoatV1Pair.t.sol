@@ -83,6 +83,76 @@ contract GoatExchangeTest is Test {
         vm.stopPrank();
     }
 
+    function testMintSuccessWithoutInitialEth() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        uint256 initialLpBalance = pair.balanceOf(lp);
+        assertEq(initialLpBalance, 100e18 - MINIMUM_LIQUIDITY);
+        (uint256 reserveWeth, uint256 reserveToken) = pair.getReserves();
+
+        assertEq(reserveWeth, initParams.virtualEth);
+        assertEq(reserveToken, initParams.initialTokenMatch);
+
+        GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
+
+        // since we allow 25% withdrawls, fractional balance will be 1/4th of the total
+        uint256 expectedFractionalBalance = initialLpBalance / 4;
+
+        assertEq(initialLPInfo.liquidityProvider, lp);
+        assertEq(initialLPInfo.fractionalBalance, expectedFractionalBalance);
+        assertEq(initialLPInfo.lastWithdraw, 0);
+        assertEq(initialLPInfo.withdrawlLeft, 4);
+    }
+
+    function testMintSuccessWithFullBootstrapEth() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 10e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        (, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, lp);
+        // since reserve eth will be 10e18 and reserveToken will be 250e18
+        // sqrt of their product = 50e18
+        uint256 expectedLp = 50e18 - MINIMUM_LIQUIDITY;
+        uint256 initialLpBalance = pair.balanceOf(lp);
+        assertEq(initialLpBalance, expectedLp);
+        (uint256 reserveEth, uint256 reserveToken) = pair.getReserves();
+
+        assertEq(reserveEth, initParams.bootstrapEth);
+        assertEq(reserveToken, tokenAmtForAmm);
+    }
+
+    function testMintSuccessWithPartialBootstrapEth() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 5e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        // expected lp will be sqrt of initial token match and virtual eth
+        // if weth sent is < bootstrap amount
+        uint256 expectedLp = 100e18 - MINIMUM_LIQUIDITY;
+        uint256 actualK = (uint256(initParams.virtualEth) * uint256(initParams.initialTokenMatch));
+
+        uint256 initialLpBalance = pair.balanceOf(lp);
+        assertEq(initialLpBalance, expectedLp);
+        (uint256 virtualReserveEth, uint256 virtualReserveToken) = pair.getReserves();
+
+        assertEq(virtualReserveEth, initParams.virtualEth + initParams.initialEth);
+        uint256 expectedVirtualReserveToken = actualK / (initParams.virtualEth + initParams.initialEth);
+
+        assertEq(virtualReserveToken, expectedVirtualReserveToken);
+    }
+
     function testMintRevertWithoutEnoughBootstrapTokenAmt() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
@@ -106,43 +176,35 @@ contract GoatExchangeTest is Test {
         vm.stopPrank();
     }
 
-    function testMintWithoutInitialEth() public {
-        GoatTypes.InitParams memory initParams;
-        initParams.virtualEth = 10e18;
-        initParams.initialEth = 0;
-        initParams.initialTokenMatch = 1000e18;
-        initParams.bootstrapEth = 10e18;
-
-        _mintInitialLiquidity(initParams, lp);
-
-        uint256 initialLpBalance = pair.balanceOf(lp);
-        assertEq(initialLpBalance, 100e18 - MINIMUM_LIQUIDITY);
-        (uint256 reserveWeth, uint256 reserveToken) = pair.getReserves();
-
-        assertEq(reserveWeth, initParams.virtualEth);
-        assertEq(reserveToken, initParams.initialTokenMatch);
-    }
-
-    function testMintWithFullBootstrapEth() public {
+    function testMintRevertWithExcessInitialWeth() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
         initParams.initialEth = 10e18;
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        (, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, lp);
-        // since reserve eth will be 10e18 and reserveToken will be 250e18
-        // sqrt of their product = 50e18
-        uint256 expectedLp = 50e18 - MINIMUM_LIQUIDITY;
-        uint256 initialLpBalance = pair.balanceOf(lp);
-        assertEq(initialLpBalance, expectedLp);
-        (uint256 reserveEth, uint256 reserveToken) = pair.getReserves();
+        uint256 bootstrapTokenAmt = GoatLibrary.getActualBootstrapTokenAmount(
+            initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
+        );
 
-        assertEq(reserveEth, initParams.bootstrapEth);
-        assertEq(reserveToken, tokenAmtForAmm);
+        fundMe(IERC20(address(goat)), lp, bootstrapTokenAmt);
+        vm.deal(lp, 20e18);
+        vm.startPrank(lp);
+        address pairAddress = factory.createPair(address(goat), initParams);
+
+        weth.deposit{value: 20e18}();
+        // send less token amount to the pair contract
+        goat.transfer(pairAddress, bootstrapTokenAmt);
+        weth.transfer(pairAddress, 20e18);
+        pair = GoatV1Pair(pairAddress);
+
+        vm.expectRevert(GoatErrors.SupplyMoreThanBootstrapEth.selector);
+        pair.mint(lp);
+
+        vm.stopPrank();
     }
 
-    function testMintWithPartialBootstrapEth() public {
+    function testMintRevertOnPresaleIfInitialLiquidityIsAlreadyThere() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
         initParams.initialEth = 5e18;
@@ -150,19 +212,8 @@ contract GoatExchangeTest is Test {
         initParams.bootstrapEth = 10e18;
 
         _mintInitialLiquidity(initParams, lp);
-
-        // expected lp will be sqrt of initial token match and virtual eth
-        // if weth sent is < bootstrap amount
-        uint256 expectedLp = 100e18 - MINIMUM_LIQUIDITY;
-        uint256 actualK = (uint256(initParams.virtualEth) * uint256(initParams.initialTokenMatch));
-
-        uint256 initialLpBalance = pair.balanceOf(lp);
-        assertEq(initialLpBalance, expectedLp);
-        (uint256 virtualReserveEth, uint256 virtualReserveToken) = pair.getReserves();
-
-        assertEq(virtualReserveEth, initParams.virtualEth + initParams.initialEth);
-        uint256 expectedVirtualReserveToken = actualK / (initParams.virtualEth + initParams.initialEth);
-
-        assertEq(virtualReserveToken, expectedVirtualReserveToken);
+        vm.startPrank(alice);
+        vm.expectRevert(GoatErrors.PresalePeriod.selector);
+        pair.mint(alice);
     }
 }
