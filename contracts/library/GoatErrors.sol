@@ -18,6 +18,7 @@ contract GoatErrors {
     error InsufficientVirtualEth();
     error InsufficientWethAmount();
     error InvalidEthAmount();
+    error InvalidParams();
     error KInvariant();
     error LiquidityCooldownActive();
     error LiquidityLocked();

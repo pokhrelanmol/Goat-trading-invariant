@@ -54,7 +54,7 @@ contract GoatExchangeTest is Test {
     }
 
     function testPairCreation() public {
-        GoatTypes.InitParams memory initParams = GoatTypes.InitParams(0, 0, 0, 0);
+        GoatTypes.InitParams memory initParams = GoatTypes.InitParams(10, 10, 10, 10);
         address pairAddress = factory.createPair(address(goat), initParams);
         pair = GoatV1Pair(pairAddress);
         assertEq(pair.factory(), address(factory));
