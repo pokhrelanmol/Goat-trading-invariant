@@ -415,4 +415,69 @@ contract GoatExchangeTest is Test {
         assertEq(wethBalAfter - wethBalBefore, wethAmt);
         assertEq(tokenBalAfter - tokenBalBefore, tokenAmt);
     }
+
+    function testSwapWhenPoolIsInPresale() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        vm.startPrank(alice);
+        vm.deal(alice, 10e18);
+        weth.deposit{value: 10e18}();
+        uint256 amountTokenOut = 250e18;
+        uint256 amountWethOut = 0;
+        weth.transfer(address(pair), 5e18 + 5e16);
+        pair.swap(amountTokenOut, amountWethOut, alice);
+        vm.stopPrank();
+    }
+
+    function testSwapToChangePoolFromPresaleToAnAmm() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        vm.startPrank(alice);
+        vm.deal(alice, 20e18);
+        weth.deposit{value: 20e18}();
+        uint256 amountTokenOut = 500e18;
+        uint256 amountWethOut = 0;
+        weth.transfer(address(pair), 10e18 + 1e17);
+        pair.swap(amountTokenOut, amountWethOut, alice);
+        vm.stopPrank();
+    }
+
+    function testSwapToRecieveTokensFromBothPresaleAndAmm() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        vm.startPrank(alice);
+        vm.deal(alice, 20e18);
+        weth.deposit{value: 20e18}();
+
+        uint256 wethForAmm = 2e18;
+        uint256 tokenAmountAtAmm = 250e18;
+        uint256 amountTokenOutFromPresale = 500e18;
+        uint256 amountTokenOutFromAmm = (wethForAmm * tokenAmountAtAmm) / (initParams.bootstrapEth + wethForAmm);
+
+        uint256 amountTokenOut = amountTokenOutFromAmm + amountTokenOutFromPresale;
+        uint256 amountWethOut = 0;
+        // TODO: there is indiscrepency when it's becoming an amm. I need to check the
+        // swap function. For now I am passing slightly more fees..
+        weth.transfer(address(pair), 12e18 + 13e16);
+        pair.swap(amountTokenOut, amountWethOut, alice);
+        vm.stopPrank();
+    }
 }

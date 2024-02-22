@@ -351,7 +351,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         swapVars.bootstrapEth = _bootstrapEth;
         if (swapVars.vestingUntil == _MAX_UINT32 && swapVars.finalReserveEth >= swapVars.bootstrapEth) {
             // at this point pool should be changed to an AMM
-            _checkAndConvertPool(swapVars.finalReserveEth, swapVars.finalReserveEth);
+            _checkAndConvertPool(swapVars.finalReserveEth, swapVars.finalReserveToken);
         } else {
             // check for K
             swapVars.initialTokenMatch = _initialTokenMatch;
@@ -378,7 +378,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 revert GoatErrors.KInvariant();
             }
         }
-        _update(swapVars.actualReserveEth, swapVars.actualReserveToken);
+        _update(swapVars.finalReserveEth, swapVars.finalReserveToken);
     }
 
     function _getActualReserves() internal view returns (uint112 reserveEth, uint112 reserveToken) {
@@ -472,6 +472,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             (, tokenAmtForAmm) = _tokenAmountsForLiquidityBootstrap(_virtualEth, _bootstrapEth, 0, _initialTokenMatch);
             kForAmm = _bootstrapEth * tokenAmtForAmm;
         }
+
         uint256 actualK = actualReserveEth * actualReserveToken;
         if (actualK < kForAmm) {
             revert GoatErrors.KInvariant();
