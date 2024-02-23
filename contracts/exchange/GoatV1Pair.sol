@@ -33,6 +33,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // Figure out a way to use excess 12 bytes in here to store something
     address private _token;
     address private _weth;
+    address private _lastPoolTokenSender;
 
     uint112 private _virtualEth;
     uint112 private _initialTokenMatch;
@@ -46,7 +47,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // and reverse engineer to get actual token match
 
     uint112 private _bootstrapEth;
-    // total lp fees that are not withdrwan
+    // total lp fees that are not withdrawn
     uint112 private _pendingLiquidityFees;
 
     // Scaled fees per token stored by 1e18
@@ -265,7 +266,8 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
 
         uint256 liquidity = balanceOf(address(this));
-        if (from == _initialLPInfo.liquidityProvider) {
+
+        if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
             _handleInitialLiquidityProviderChecks(liquidity);
             _updateInitialLpInfo(liquidity, from, true);
         }
@@ -529,17 +531,24 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // tokenAmtForAmm += 1;
     }
 
+    // handle initial liquidity provider checks and update locked if lp is transferred
     function _beforeTokenTransfer(address from, address to, uint256) internal override {
-        // handle initial liquidity provider checks
         GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
-        // only allow address(this) to recieve lp tokens from initial liquidity
-        if ((from == lpInfo.liquidityProvider && to != address(this)) || lpInfo.liquidityProvider == to) {
+
+        if (from == lpInfo.liquidityProvider && to != address(this) || to == _initialLPInfo.liquidityProvider) {
             revert GoatErrors.LPTransferRestricted();
         }
+
+        // Lock the tokens if they are not being transferred to this contract
         if (to != address(this)) {
             _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
+        } else {
+            // We need to store from if lp is being sent to address(this) because
+            // initial user can bypass the checks inside burn by passing from argument
+            _lastPoolTokenSender = from;
         }
 
+        // Update fee rewards for both sender and receiver
         _updateFeeRewards(from);
         _updateFeeRewards(to);
     }
@@ -553,8 +562,8 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function _earned(address lp, uint256 _feesPerTokenStored) internal view returns (uint256) {
         uint256 feesPerToken = _feesPerTokenStored - feesPerTokenPaid[lp];
-        uint256 feesAccured = (balanceOf(lp) * feesPerToken) / 1e18;
-        return lpFees[lp] + feesAccured;
+        uint256 feesAccrued = (balanceOf(lp) * feesPerToken) / 1e18;
+        return lpFees[lp] + feesAccrued;
     }
 
     function earned(address lp) external view returns (uint256) {

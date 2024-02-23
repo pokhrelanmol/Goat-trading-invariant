@@ -293,6 +293,32 @@ contract GoatExchangeTest is Test {
         assertApproxEqAbs(lpTokenBalanceAfter - lpTokenBalanceBefore, 62.5 ether, 0.0001 ether);
     }
 
+    function testPartialBypassRevertFromInitialLp() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 10e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, lp);
+
+        // burn 1/4th of the lp
+        vm.startPrank(lp);
+
+        uint256 warpTime = block.timestamp + 3 days;
+        // increase block.timestamp so that initial lp can remove liquidity
+        vm.warp(warpTime);
+        uint256 totalBalance = pair.balanceOf(lp);
+        pair.transfer(address(pair), totalBalance);
+        vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
+        // So even if burn is called for alice and actual tokens was
+        // transferred by initial lp this call should fail because
+        // from of last token recieved by the contract is saved and checked
+        // when burn is called.
+        pair.burn(alice);
+        vm.stopPrank();
+    }
+
     function testPartialBurnRevertOnCooldownActive() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
