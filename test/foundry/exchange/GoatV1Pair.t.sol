@@ -498,12 +498,24 @@ contract GoatExchangeTest is Test {
         uint256 amountTokenOutFromPresale = 500e18;
         uint256 amountTokenOutFromAmm = (wethForAmm * tokenAmountAtAmm) / (initParams.bootstrapEth + wethForAmm);
 
+        (uint256 virtualEthReserve, uint256 virtualTokenReserve) = pair.getReserves();
+        uint256 actualK = virtualEthReserve * virtualTokenReserve;
+        uint256 desiredK = uint256(initParams.virtualEth) * (initParams.initialTokenMatch);
+
+        assertGe(actualK, desiredK);
+
         uint256 amountTokenOut = amountTokenOutFromAmm + amountTokenOutFromPresale;
         uint256 amountWethOut = 0;
-        // TODO: there is indiscrepency when it's becoming an amm. I need to check the
-        // swap function. For now I am passing slightly more fees..
-        weth.transfer(address(pair), 12e18 + 13e16);
+        weth.transfer(address(pair), 12e18 + 12e16);
         pair.swap(amountTokenOut, amountWethOut, alice);
         vm.stopPrank();
+
+        // Since the pool has turned to an Amm now, the reserves are real.
+        (uint256 realEthReserve, uint256 realTokenReserve) = pair.getReserves();
+
+        desiredK = tokenAmountAtAmm * initParams.bootstrapEth;
+        actualK = realEthReserve * realTokenReserve;
+
+        assertGe(actualK, desiredK);
     }
 }

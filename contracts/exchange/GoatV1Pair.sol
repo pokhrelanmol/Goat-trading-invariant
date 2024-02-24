@@ -50,7 +50,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // total lp fees that are not withdrawn
     uint112 private _pendingLiquidityFees;
 
-    // Scaled fees per token stored by 1e18
+    // Scaled fees per token scaled by 1e18
     uint184 public feesPerTokenStored;
     // this variable can store >4500 ether
     uint72 private _pendingProtocolFees;
@@ -87,10 +87,15 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _bootstrapEth = params.bootstrapEth;
     }
 
-    function _update(uint256 balanceEth, uint256 balanceToken) internal {
+    function _update(uint256 balanceEth, uint256 balanceToken, bool fromSwap) internal {
         // Update token reserves and other necessary data
-        _reserveEth = uint112(balanceEth - (_pendingLiquidityFees + _pendingProtocolFees));
-        _reserveToken = uint112(balanceToken);
+        if (fromSwap) {
+            _reserveEth = uint112(balanceEth);
+            _reserveToken = uint112(balanceToken);
+        } else {
+            _reserveEth = uint112(balanceEth - (_pendingLiquidityFees + _pendingProtocolFees));
+            _reserveToken = uint112(balanceToken);
+        }
     }
 
     function _handleFees(uint256 amountWethIn, uint256 amountWethOut) internal returns (uint256 feesCollected) {
@@ -98,9 +103,9 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // fees collected will be 100 bps of the weth amount
         if (amountWethIn != 0) {
-            feesCollected = (amountWethIn * 100) / 10000;
+            feesCollected = (amountWethIn * 99) / 10000;
         } else {
-            feesCollected = (amountWethOut * 10000) / 9900 - amountWethOut;
+            feesCollected = (amountWethOut * 10000) / 9901 - amountWethOut;
         }
         // lp fess is fixed 40% of the fees collected of total 100 bps
         uint256 feesLp = (feesCollected * 40) / 100;
@@ -109,9 +114,9 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         unchecked {
             _pendingLiquidityFees += uint112(feesLp);
-            pendingProtocolFees += uint184(feesCollected - feesLp);
+            pendingProtocolFees += feesCollected - feesLp;
             // update fees per token stored
-            feesPerTokenStored += uint168((feesLp * 1e18) / totalSupply());
+            feesPerTokenStored += uint184((feesLp * 1e18) / totalSupply());
         }
 
         IGoatV1Factory _factory = IGoatV1Factory(factory);
@@ -220,7 +225,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
         _mint(to, liquidity);
 
-        _update(balanceEth, balanceToken);
+        _update(balanceEth, balanceToken, false);
 
         emit Mint(msg.sender, amountWeth, amountToken);
     }
@@ -291,7 +296,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         balanceEth = IERC20(_weth).balanceOf(address(this));
         balanceToken = IERC20(_token).balanceOf(address(this));
 
-        _update(balanceEth, balanceToken);
+        _update(balanceEth, balanceToken, false);
 
         emit Burn(msg.sender, amountWeth, amountToken, from);
     }
@@ -380,7 +385,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 revert GoatErrors.KInvariant();
             }
         }
-        _update(swapVars.finalReserveEth, swapVars.finalReserveToken);
+        _update(swapVars.finalReserveEth, swapVars.finalReserveToken, true);
     }
 
     function _getActualReserves() internal view returns (uint112 reserveEth, uint112 reserveToken) {
@@ -396,9 +401,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         uint256 initialTokenMatch
     ) internal pure returns (uint112 reserveEth, uint112 reserveToken) {
         if (vestingUntil_ != _MAX_UINT32) {
+            // Actual reserves
             reserveEth = uint112(ethReserve);
             reserveToken = uint112(tokenReserve);
         } else {
+            // Virtual reserves
             reserveEth = uint112(virtualEth + ethReserve);
             reserveToken = uint112((virtualEth * initialTokenMatch) / reserveEth);
         }
@@ -448,7 +455,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // eth we raised until this point should be considered as bootstrap eth
         _bootstrapEth = uint112(bootstrapEth);
 
-        _update(_reserveEth, tokenAmtForAmm);
+        _update(reserveEth, tokenAmtForAmm, true);
     }
 
     function _burnLiquidityAndConvertToAmm(uint256 actualEthReserve, uint256 actualTokenReserve) internal {
