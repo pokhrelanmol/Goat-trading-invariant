@@ -12,6 +12,15 @@ import "../../../contracts/library/GoatTypes.sol";
 import "../../../contracts/library/GoatLibrary.sol";
 import "../../../contracts/library/GoatErrors.sol";
 
+struct Users {
+    address whale;
+    address alice;
+    address bob;
+    address lp;
+    address lp1;
+    address treasury;
+}
+
 contract GoatExchangeTest is Test {
     uint256 public constant MINIMUM_LIQUIDITY = 10 ** 3;
     uint32 private constant _MAX_UINT32 = type(uint32).max;
@@ -19,22 +28,24 @@ contract GoatExchangeTest is Test {
     GoatV1Pair pair;
     MockERC20 goat;
     MockWETH weth;
-    address public whale = makeAddr("whale");
-    address public alice = makeAddr("alice");
-    address public bob = makeAddr("bob");
-    address public lp = makeAddr("lp");
-    address public lp1 = makeAddr("lp1");
-    address public treasury = makeAddr("treasury");
+    Users users;
 
     function setUp() public {
-        // pass weth as constructor param
+        users = Users({
+            whale: makeAddr("whale"),
+            alice: makeAddr("alice"),
+            bob: makeAddr("bob"),
+            lp: makeAddr("lp"),
+            lp1: makeAddr("lp1"),
+            treasury: makeAddr("treasury")
+        });
         vm.warp(300 days);
 
-        vm.startPrank(whale);
+        vm.startPrank(users.whale);
         weth = new MockWETH();
         goat = new MockERC20();
         vm.stopPrank();
-        vm.startPrank(treasury);
+        vm.startPrank(users.treasury);
         factory = new GoatV1Factory(address(weth));
         vm.stopPrank();
     }
@@ -44,11 +55,11 @@ contract GoatExchangeTest is Test {
     }
 
     function testFactoryTreasury() public {
-        assertEq(factory.treasury(), treasury);
+        assertEq(factory.treasury(), users.treasury);
     }
 
     function fundMe(IERC20 token, address to, uint256 amount) public {
-        vm.startPrank(whale);
+        vm.startPrank(users.whale);
         token.transfer(to, amount);
         vm.stopPrank();
     }
@@ -103,9 +114,9 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
-        uint256 initialLpBalance = pair.balanceOf(lp);
+        uint256 initialLpBalance = pair.balanceOf(users.lp);
         assertEq(initialLpBalance, 100e18 - MINIMUM_LIQUIDITY);
         (uint256 reserveWeth, uint256 reserveToken) = pair.getReserves();
 
@@ -117,7 +128,7 @@ contract GoatExchangeTest is Test {
         // since we allow 25% withdrawls, fractional balance will be 1/4th of the total
         uint256 expectedFractionalBalance = initialLpBalance / 4;
 
-        assertEq(initialLPInfo.liquidityProvider, lp);
+        assertEq(initialLPInfo.liquidityProvider, users.lp);
         assertEq(initialLPInfo.fractionalBalance, expectedFractionalBalance);
         assertEq(initialLPInfo.lastWithdraw, 0);
         assertEq(initialLPInfo.withdrawlLeft, 4);
@@ -130,11 +141,11 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        (, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, lp);
+        (, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, users.lp);
         // since reserve eth will be 10e18 and reserveToken will be 250e18
         // sqrt of their product = 50e18
         uint256 expectedLp = 50e18 - MINIMUM_LIQUIDITY;
-        uint256 initialLpBalance = pair.balanceOf(lp);
+        uint256 initialLpBalance = pair.balanceOf(users.lp);
         assertEq(initialLpBalance, expectedLp);
         (uint256 reserveEth, uint256 reserveToken) = pair.getReserves();
 
@@ -152,14 +163,14 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // expected lp will be sqrt of initial token match and virtual eth
         // if weth sent is < bootstrap amount
         uint256 expectedLp = 100e18 - MINIMUM_LIQUIDITY;
         uint256 actualK = (uint256(initParams.virtualEth) * uint256(initParams.initialTokenMatch));
 
-        uint256 initialLpBalance = pair.balanceOf(lp);
+        uint256 initialLpBalance = pair.balanceOf(users.lp);
         assertEq(initialLpBalance, expectedLp);
         (uint256 virtualReserveEth, uint256 virtualReserveToken) = pair.getReserves();
 
@@ -181,8 +192,8 @@ contract GoatExchangeTest is Test {
         uint256 bootstrapTokenAmt = GoatLibrary.getActualBootstrapTokenAmount(
             initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
         );
-        fundMe(IERC20(address(goat)), lp, bootstrapTokenAmt);
-        vm.startPrank(lp);
+        fundMe(IERC20(address(goat)), users.lp, bootstrapTokenAmt);
+        vm.startPrank(users.lp);
         address pairAddress = factory.createPair(address(goat), initParams);
 
         // send less token amount to the pair contract
@@ -190,7 +201,7 @@ contract GoatExchangeTest is Test {
         pair = GoatV1Pair(pairAddress);
 
         vm.expectRevert(GoatErrors.InsufficientTokenAmount.selector);
-        pair.mint(lp);
+        pair.mint(users.lp);
 
         vm.stopPrank();
     }
@@ -206,9 +217,9 @@ contract GoatExchangeTest is Test {
             initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
         );
 
-        fundMe(IERC20(address(goat)), lp, bootstrapTokenAmt);
-        vm.deal(lp, 20e18);
-        vm.startPrank(lp);
+        fundMe(IERC20(address(goat)), users.lp, bootstrapTokenAmt);
+        vm.deal(users.lp, 20e18);
+        vm.startPrank(users.lp);
         address pairAddress = factory.createPair(address(goat), initParams);
 
         weth.deposit{value: 20e18}();
@@ -218,7 +229,7 @@ contract GoatExchangeTest is Test {
         pair = GoatV1Pair(pairAddress);
 
         vm.expectRevert(GoatErrors.SupplyMoreThanBootstrapEth.selector);
-        pair.mint(lp);
+        pair.mint(users.lp);
 
         vm.stopPrank();
     }
@@ -230,10 +241,10 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
-        vm.startPrank(alice);
+        _mintInitialLiquidity(initParams, users.lp);
+        vm.startPrank(users.alice);
         vm.expectRevert(GoatErrors.PresalePeriod.selector);
-        pair.mint(alice);
+        pair.mint(users.alice);
         vm.stopPrank();
     }
 
@@ -244,10 +255,10 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
-        vm.startPrank(lp);
+        _mintInitialLiquidity(initParams, users.lp);
+        vm.startPrank(users.lp);
         vm.expectRevert(GoatErrors.LPTransferRestricted.selector);
-        pair.transfer(bob, 1e18);
+        pair.transfer(users.bob, 1e18);
         vm.stopPrank();
     }
 
@@ -258,27 +269,27 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // get initial lp info
         GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
         // burn 1/4th of the lp
-        vm.startPrank(lp);
+        vm.startPrank(users.lp);
 
         uint256 totalSupplyBefore = pair.totalSupply();
-        uint256 lpWethBalBefore = weth.balanceOf(lp);
-        uint256 lpTokenBalanceBefore = goat.balanceOf(lp);
+        uint256 lpWethBalBefore = weth.balanceOf(users.lp);
+        uint256 lpTokenBalanceBefore = goat.balanceOf(users.lp);
 
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
         pair.transfer(address(pair), initialLPInfo.fractionalBalance);
-        pair.burn(lp);
+        pair.burn(users.lp);
         vm.stopPrank();
 
         uint256 totalSupplyAfter = pair.totalSupply();
-        uint256 lpWethBalAfter = weth.balanceOf(lp);
-        uint256 lpTokenBalanceAfter = goat.balanceOf(lp);
+        uint256 lpWethBalAfter = weth.balanceOf(users.lp);
+        uint256 lpTokenBalanceAfter = goat.balanceOf(users.lp);
 
         GoatTypes.InitialLPInfo memory initialLPInfoAfterBurn = pair.getInitialLPInfo();
 
@@ -300,22 +311,22 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // burn 1/4th of the lp
-        vm.startPrank(lp);
+        vm.startPrank(users.lp);
 
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
-        uint256 totalBalance = pair.balanceOf(lp);
+        uint256 totalBalance = pair.balanceOf(users.lp);
         pair.transfer(address(pair), totalBalance);
         vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
         // So even if burn is called for alice and actual tokens was
         // transferred by initial lp this call should fail because
         // from of last token recieved by the contract is saved and checked
         // when burn is called.
-        pair.burn(alice);
+        pair.burn(users.alice);
         vm.stopPrank();
     }
 
@@ -326,22 +337,22 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // get initial lp info
         GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
 
-        vm.startPrank(lp);
+        vm.startPrank(users.lp);
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
         pair.transfer(address(pair), initialLPInfo.fractionalBalance);
-        pair.burn(lp);
+        pair.burn(users.lp);
 
         // Withdraw cooldown active check
         pair.transfer(address(pair), initialLPInfo.fractionalBalance);
         vm.expectRevert(GoatErrors.WithdrawalCooldownActive.selector);
-        pair.burn(lp);
+        pair.burn(users.lp);
         vm.stopPrank();
     }
 
@@ -352,12 +363,12 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // get initial lp info
         GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
 
-        vm.startPrank(lp);
+        vm.startPrank(users.lp);
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
@@ -365,7 +376,7 @@ contract GoatExchangeTest is Test {
 
         // Should not allow liquidity burn on preslae period!
         vm.expectRevert(GoatErrors.PresalePeriod.selector);
-        pair.burn(lp);
+        pair.burn(users.lp);
 
         vm.stopPrank();
     }
@@ -377,12 +388,12 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
         // get initial lp info
         GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
 
-        vm.startPrank(lp);
+        vm.startPrank(users.lp);
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
@@ -390,7 +401,7 @@ contract GoatExchangeTest is Test {
         uint256 withdrawLpAmount = initialLPInfo.fractionalBalance + 1e18;
         pair.transfer(address(pair), withdrawLpAmount);
         vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
-        pair.burn(lp);
+        pair.burn(users.lp);
         vm.stopPrank();
     }
 
@@ -401,11 +412,11 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
-        _mintLiquidity(5e18, 125e18, bob);
+        _mintLiquidity(5e18, 125e18, users.bob);
 
-        uint256 bobLpBalance = pair.balanceOf(bob);
+        uint256 bobLpBalance = pair.balanceOf(users.bob);
         uint256 expectedLpMinted = 25e18;
 
         assertEq(bobLpBalance, expectedLpMinted);
@@ -418,25 +429,25 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
         uint256 wethAmt = 5e18;
         uint256 tokenAmt = 125e18;
 
-        _mintLiquidity(wethAmt, tokenAmt, bob);
+        _mintLiquidity(wethAmt, tokenAmt, users.bob);
 
-        uint256 bobLpBalance = pair.balanceOf(bob);
+        uint256 bobLpBalance = pair.balanceOf(users.bob);
 
-        uint256 wethBalBefore = weth.balanceOf(bob);
-        uint256 tokenBalBefore = goat.balanceOf(bob);
+        uint256 wethBalBefore = weth.balanceOf(users.bob);
+        uint256 tokenBalBefore = goat.balanceOf(users.bob);
 
-        vm.startPrank(bob);
+        vm.startPrank(users.bob);
         pair.transfer(address(pair), bobLpBalance);
         uint256 warpTime = block.timestamp + 3 days;
         vm.warp(warpTime);
-        pair.burn(bob);
+        pair.burn(users.bob);
 
-        uint256 wethBalAfter = weth.balanceOf(bob);
-        uint256 tokenBalAfter = goat.balanceOf(bob);
+        uint256 wethBalAfter = weth.balanceOf(users.bob);
+        uint256 tokenBalAfter = goat.balanceOf(users.bob);
 
         assertEq(wethBalAfter - wethBalBefore, wethAmt);
         assertEq(tokenBalAfter - tokenBalBefore, tokenAmt);
@@ -449,15 +460,15 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
-        vm.startPrank(alice);
-        vm.deal(alice, 10e18);
+        vm.startPrank(users.alice);
+        vm.deal(users.alice, 10e18);
         weth.deposit{value: 10e18}();
         uint256 amountTokenOut = 250e18;
         uint256 amountWethOut = 0;
         weth.transfer(address(pair), 5e18 + 5e16);
-        pair.swap(amountTokenOut, amountWethOut, alice);
+        pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
     }
 
@@ -468,15 +479,17 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
-        vm.startPrank(alice);
-        vm.deal(alice, 20e18);
+        vm.startPrank(users.alice);
+        vm.deal(users.alice, 20e18);
         weth.deposit{value: 20e18}();
         uint256 amountTokenOut = 500e18;
         uint256 amountWethOut = 0;
-        weth.transfer(address(pair), 10e18 + 1e17);
-        pair.swap(amountTokenOut, amountWethOut, alice);
+        uint256 amountWeth = 10e18;
+        uint256 wethAmtWithFees = (amountWeth * 10000) / 9901;
+        weth.transfer(address(pair), wethAmtWithFees);
+        pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
     }
 
@@ -487,10 +500,10 @@ contract GoatExchangeTest is Test {
         initParams.initialTokenMatch = 1000e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, lp);
+        _mintInitialLiquidity(initParams, users.lp);
 
-        vm.startPrank(alice);
-        vm.deal(alice, 20e18);
+        vm.startPrank(users.alice);
+        vm.deal(users.alice, 20e18);
         weth.deposit{value: 20e18}();
 
         uint256 wethForAmm = 2e18;
@@ -506,8 +519,11 @@ contract GoatExchangeTest is Test {
 
         uint256 amountTokenOut = amountTokenOutFromAmm + amountTokenOutFromPresale;
         uint256 amountWethOut = 0;
-        weth.transfer(address(pair), 12e18 + 12e16);
-        pair.swap(amountTokenOut, amountWethOut, alice);
+        uint256 actualWeth = 12e18;
+        uint256 actualWethWithFees = (actualWeth * 10000) / 9901;
+
+        weth.transfer(address(pair), actualWethWithFees);
+        pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
 
         // Since the pool has turned to an Amm now, the reserves are real.
@@ -517,5 +533,46 @@ contract GoatExchangeTest is Test {
         actualK = realEthReserve * realTokenReserve;
 
         assertGe(actualK, desiredK);
+    }
+
+    function testWithdrawAccessTokenSuccess() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+
+        uint256 wethAmount = 5e18;
+        uint256 expectedTokenOut = (wethAmount * initParams.initialTokenMatch) / (initParams.virtualEth + wethAmount);
+        uint256 wethAmountWithFees = (wethAmount * 10000) / 9901;
+
+        vm.startPrank(users.alice);
+        vm.deal(users.alice, wethAmountWithFees);
+        weth.deposit{value: wethAmountWithFees}();
+        weth.transfer(address(pair), wethAmountWithFees);
+        pair.swap(expectedTokenOut, 0, users.alice);
+        vm.stopPrank();
+
+        uint256 warpTime = block.timestamp + 32 days;
+        vm.warp(warpTime);
+        vm.startPrank(users.lp);
+        pair.withdrawExcessToken();
+        vm.stopPrank();
+
+        uint256 actualWethReserveInPool = wethAmount;
+
+        // at this point the pool has turned to an Amm
+        // I need to check if the tokens in the pool match
+        // up with what's needed in the pool
+
+        (, uint256 tokenAmountForAmm) = GoatLibrary.getTokenAmountsForPresaleAndAmm(
+            initParams.virtualEth, actualWethReserveInPool, 0, initParams.initialTokenMatch
+        );
+
+        (uint256 realEthReserve, uint256 realTokenReserve) = pair.getReserves();
+        assertEq(tokenAmountForAmm, realTokenReserve);
+        assertEq(wethAmount, realEthReserve);
     }
 }
