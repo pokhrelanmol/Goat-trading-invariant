@@ -77,8 +77,8 @@ contract GoatTypes {
 
     struct LocalVariables_Swap {
         bool isBuy;
-        uint256 actualReserveEth;
-        uint256 actualReserveToken;
+        uint256 initialReserveEth;
+        uint256 initialReserveToken;
         uint256 finalReserveEth;
         uint256 finalReserveToken;
         uint256 amountWethIn;

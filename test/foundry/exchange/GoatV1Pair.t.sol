@@ -463,11 +463,14 @@ contract GoatExchangeTest is Test {
         _mintInitialLiquidity(initParams, users.lp);
 
         vm.startPrank(users.alice);
-        vm.deal(users.alice, 10e18);
-        weth.deposit{value: 10e18}();
+        uint256 wethAmount = 5e18;
         uint256 amountTokenOut = 250e18;
         uint256 amountWethOut = 0;
-        weth.transfer(address(pair), 5e18 + 5e16);
+        uint256 wethWithFees = wethAmount * 10000 / 9901;
+        vm.deal(users.alice, wethWithFees);
+        weth.deposit{value: wethWithFees}();
+
+        weth.transfer(address(pair), wethWithFees);
         pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
     }
@@ -481,6 +484,13 @@ contract GoatExchangeTest is Test {
 
         _mintInitialLiquidity(initParams, users.lp);
 
+        uint256 lpBalance = pair.balanceOf(users.lp);
+        uint256 expectedFractionalBalance = lpBalance / 4;
+        GoatTypes.InitialLPInfo memory initialLPInfoBefore = pair.getInitialLPInfo();
+
+        assertEq(initialLPInfoBefore.withdrawlLeft, 4);
+        assertEq(expectedFractionalBalance, initialLPInfoBefore.fractionalBalance);
+
         vm.startPrank(users.alice);
         vm.deal(users.alice, 20e18);
         weth.deposit{value: 20e18}();
@@ -491,6 +501,11 @@ contract GoatExchangeTest is Test {
         weth.transfer(address(pair), wethAmtWithFees);
         pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
+        GoatTypes.InitialLPInfo memory initialLPInfoAfter = pair.getInitialLPInfo();
+        lpBalance = pair.balanceOf(users.lp);
+        expectedFractionalBalance = lpBalance / 4;
+        assertEq(initialLPInfoAfter.withdrawlLeft, 4);
+        assertEq(expectedFractionalBalance, initialLPInfoAfter.fractionalBalance);
     }
 
     function testSwapToRecieveTokensFromBothPresaleAndAmm() public {
