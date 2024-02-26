@@ -45,9 +45,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     uint112 private _reserveToken;
     uint32 private _lastTrade;
 
-    // No need to save it can be used first time to calculate k last
-    // and reverse engineer to get actual token match
-
     uint112 private _bootstrapEth;
     // total lp fees that are not withdrawn
     uint112 private _pendingLiquidityFees;
@@ -247,7 +244,12 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // don't check fractional balance if withdrawalLeft is 1
         // user should be allowed to withdraw dust liquidity created
         // due to division by 4 at this point
-        if (info.withdrawlLeft == 1) return;
+        if (info.withdrawlLeft == 1) {
+            uint256 balance = balanceOf(info.liquidityProvider);
+            if (liquidity != balance) {
+                revert GoatErrors.ShouldWithdrawAllBalance();
+            }
+        }
 
         // For system to function correctly initial lp should be
         // able to withdraw exactly fractional balance that is stored
@@ -378,20 +380,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             swapVars.initialTokenMatch = _initialTokenMatch;
             swapVars.virtualEth = _virtualEth;
 
-            (swapVars.virtualEthReserveBefore, swapVars.virtualTokenReserveBefore) = _getReserves(
-                swapVars.vestingUntil,
-                swapVars.initialReserveEth,
-                swapVars.initialReserveToken,
-                swapVars.virtualEth,
-                swapVars.initialTokenMatch
-            );
-            (swapVars.virtualEthReserveAfter, swapVars.virtualTokenReserveAfter) = _getReserves(
-                swapVars.vestingUntil,
-                swapVars.finalReserveEth,
-                swapVars.finalReserveToken,
-                swapVars.virtualEth,
-                swapVars.initialTokenMatch
-            );
+            (swapVars.virtualEthReserveBefore, swapVars.virtualTokenReserveBefore) =
+                _getReserves(swapVars.vestingUntil, swapVars.initialReserveEth, swapVars.initialReserveToken);
+            (swapVars.virtualEthReserveAfter, swapVars.virtualTokenReserveAfter) =
+                _getReserves(swapVars.vestingUntil, swapVars.finalReserveEth, swapVars.finalReserveToken);
             if (
                 swapVars.virtualEthReserveBefore * swapVars.virtualTokenReserveBefore
                     > swapVars.virtualEthReserveAfter * swapVars.virtualTokenReserveAfter
@@ -407,28 +399,30 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         reserveToken = _reserveToken;
     }
 
-    function _getReserves(
-        uint32 vestingUntil_,
-        uint256 ethReserve,
-        uint256 tokenReserve,
-        uint256 virtualEth,
-        uint256 initialTokenMatch
-    ) internal pure returns (uint112 reserveEth, uint112 reserveToken) {
+    function _getReserves(uint32 vestingUntil_, uint256 ethReserve, uint256 tokenReserve)
+        internal
+        view
+        returns (uint112 reserveEth, uint112 reserveToken)
+    {
+        // just pass eth reserve and token reserve here only use virtual eth and initial token match
+        // if pool has not turned into an AMM
         if (vestingUntil_ != _MAX_UINT32) {
             // Actual reserves
             reserveEth = uint112(ethReserve);
             reserveToken = uint112(tokenReserve);
         } else {
+            uint256 initialTokenMatch = _initialTokenMatch;
+            uint256 virtualEth = _virtualEth;
+            uint256 virtualToken = _getVirtualToken(virtualEth, _bootstrapEth, initialTokenMatch);
             // Virtual reserves
             reserveEth = uint112(virtualEth + ethReserve);
-            reserveToken = uint112((virtualEth * initialTokenMatch) / reserveEth);
+            reserveToken = uint112(virtualToken + tokenReserve);
         }
     }
 
     /// @notice returns actual reserves if pool has turned into an AMM else returns virtual reserves
     function getReserves() public view returns (uint112 reserveEth, uint112 reserveToken) {
-        (reserveEth, reserveToken) =
-            _getReserves(_vestingUntil, _reserveEth, _reserveToken, _virtualEth, _initialTokenMatch);
+        (reserveEth, reserveToken) = _getReserves(_vestingUntil, _reserveEth, _reserveToken);
     }
 
     // this function converts the pool to an AMM with less liquidity and removes
@@ -521,6 +515,17 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // update pending liquidity fees
         _pendingLiquidityFees -= uint112(totalFees);
         // is there a need to check if weth balance is in sync with reserve and fees?
+    }
+
+    function _getVirtualToken(uint256 virtualEth, uint256 bootstrapEth, uint256 initialTokenMatch)
+        internal
+        pure
+        returns (uint256 virtualToken)
+    {
+        (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) =
+            _tokenAmountsForLiquidityBootstrap(virtualEth, bootstrapEth, 0, initialTokenMatch);
+
+        virtualToken = initialTokenMatch - (tokenAmtForPresale + tokenAmtForAmm);
     }
 
     function _tokenAmountsForLiquidityBootstrap(
@@ -632,5 +637,17 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function lockedUntil(address user) external view returns (uint32) {
         return _locked[user];
+    }
+
+    function getFeesPerTokenStored() external view returns (uint256) {
+        return feesPerTokenStored;
+    }
+
+    function getPendingLiquidityFees() external view returns (uint112) {
+        return _pendingLiquidityFees;
+    }
+
+    function getPendingProtocolFees() external view returns (uint72) {
+        return _pendingProtocolFees;
     }
 }

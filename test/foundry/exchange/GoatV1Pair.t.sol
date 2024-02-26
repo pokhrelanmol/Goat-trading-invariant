@@ -175,7 +175,7 @@ contract GoatExchangeTest is Test {
         (uint256 virtualReserveEth, uint256 virtualReserveToken) = pair.getReserves();
 
         assertEq(virtualReserveEth, initParams.virtualEth + initParams.initialEth);
-        uint256 expectedVirtualReserveToken = actualK / (initParams.virtualEth + initParams.initialEth);
+        uint256 expectedVirtualReserveToken = (actualK / (initParams.virtualEth + initParams.initialEth)) + 1;
 
         assertEq(virtualReserveToken, expectedVirtualReserveToken);
 
