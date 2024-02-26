@@ -244,8 +244,15 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if ((timestamp - 1 weeks) < info.lastWithdraw) {
             revert GoatErrors.WithdrawalCooldownActive();
         }
+        // don't check fractional balance if withdrawalLeft is 1
+        // user should be allowed to withdraw dust liquidity created
+        // due to division by 4 at this point
+        if (info.withdrawlLeft == 1) return;
 
-        if (liquidity > info.fractionalBalance) {
+        // For system to function correctly initial lp should be
+        // able to withdraw exactly fractional balance that is stored
+        // as we are allowing 4 withdrawls
+        if (liquidity != info.fractionalBalance) {
             revert GoatErrors.BurnLimitExceeded();
         }
     }
