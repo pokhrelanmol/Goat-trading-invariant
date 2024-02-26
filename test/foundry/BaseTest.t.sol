@@ -20,8 +20,9 @@ abstract contract BaseTest is Test {
 
     //Users
     address public lp_1 = makeAddr("lp_1");
+    address public swapper = makeAddr("swapper");
 
-    struct AddLiqudityParams {
+    struct AddLiquidityParams {
         address token;
         uint256 tokenDesired;
         uint256 wethDesired;
@@ -32,9 +33,10 @@ abstract contract BaseTest is Test {
         GoatTypes.InitParams initParams;
     }
 
-    AddLiqudityParams public addLiqParams;
+    AddLiquidityParams public addLiqParams;
 
     function setUp() public {
+        vm.warp(300 days);
         weth = new MockWETH();
         token = new MockERC20();
         factory = new GoatV1Factory(address(weth));
@@ -43,10 +45,7 @@ abstract contract BaseTest is Test {
         // Mint tokens
     }
 
-    function addLiquidityParams(
-        bool initial,
-        bool sendInitWeth
-    ) public returns (AddLiqudityParams memory) {
+    function addLiquidityParams(bool initial, bool sendInitWeth) public returns (AddLiquidityParams memory) {
         weth.deposit{value: 100e18}();
         if (initial) {
             /* ------------------------------- SET PARAMS ------------------------------- */
@@ -58,12 +57,7 @@ abstract contract BaseTest is Test {
             addLiqParams.to = address(this);
             addLiqParams.deadline = block.timestamp + 1000;
 
-            addLiqParams.initParams = GoatTypes.InitParams(
-                10e18,
-                10e18,
-                sendInitWeth ? 5e18 : 0,
-                1000e18
-            );
+            addLiqParams.initParams = GoatTypes.InitParams(10e18, 10e18, sendInitWeth ? 5e18 : 0, 1000e18);
         } else {
             addLiqParams.token = address(token);
             addLiqParams.tokenDesired = 100e18;
@@ -75,7 +69,157 @@ abstract contract BaseTest is Test {
 
             addLiqParams.initParams = GoatTypes.InitParams(0, 0, 0, 0);
         }
-        console2.log("We are here");
         return addLiqParams;
+    }
+
+    function _addLiquidityAndConvertToAmm()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        addLiqParams.initParams.initialEth = 10e18; // set all weth
+        actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+        token.approve(address(router), actualTokenAmountToSend);
+        weth.approve(address(router), addLiqParams.initParams.initialEth);
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidity(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.wethDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
+    }
+
+    function _addLiquidityEthAndConvertToAmm()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        addLiqParams.initParams.initialEth = 10e18; // set all weth
+        actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+
+        token.approve(address(router), actualTokenAmountToSend);
+
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidityETH{value: 10e18}(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
+    }
+
+    function _addLiquidityWithSomeWeth()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+        token.approve(address(router), actualTokenAmountToSend);
+        weth.approve(address(router), addLiqParams.initParams.initialEth);
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidity(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.wethDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
+    }
+
+    function _addLiquidityWithSomeEth()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+
+        token.approve(address(router), actualTokenAmountToSend);
+
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidityETH{value: 5e18}(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
+    }
+
+    function _addLiquidityWithoutWeth()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
+        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+        token.approve(address(router), actualTokenAmountToSend);
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidity(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.wethDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
+    }
+
+    function _addLiquidityWithoutEth()
+        internal
+        returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
+    {
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
+        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+            addLiqParams.initParams.virtualEth,
+            addLiqParams.initParams.bootstrapEth,
+            addLiqParams.initParams.initialEth,
+            addLiqParams.initParams.initialTokenMatch
+        );
+
+        token.approve(address(router), actualTokenAmountToSend);
+
+        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidityETH{value: addLiqParams.initParams.initialEth}(
+            addLiqParams.token,
+            addLiqParams.tokenDesired,
+            addLiqParams.tokenMin,
+            addLiqParams.wethMin,
+            addLiqParams.to,
+            addLiqParams.deadline,
+            addLiqParams.initParams
+        );
     }
 }

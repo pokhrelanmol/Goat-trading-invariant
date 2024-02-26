@@ -94,4 +94,13 @@ contract GoatTypes {
         uint256 virtualEth;
         uint256 initialTokenMatch;
     }
+
+    struct LocalVariables_PairStateInfo {
+        uint256 reserveEth;
+        uint256 reserveToken;
+        uint112 virtualEth;
+        uint256 initialTokenMatch;
+        uint32 vestingUntil;
+        uint256 bootstrapEth;
+    }
 }

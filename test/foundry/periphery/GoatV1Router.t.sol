@@ -17,28 +17,7 @@ contract GoatV1RouterTest is BaseTest {
 
     /* ------------------------------ SUCCESS TESTS ADD LIQUIDITY ----------------------------- */
     function testAddLiquditySuccessFirstWithoutWeth() public {
-        // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidity(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.wethDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
-
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = _addLiquidityWithoutWeth();
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
         uint256 expectedLiquidity = Math.sqrt(10e18 * 1000e18) - 1000;
@@ -60,26 +39,7 @@ contract GoatV1RouterTest is BaseTest {
 
     function testAddLiquiditySuccessFirstWithSomeWeth() public {
         // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-        weth.approve(address(router), addLiqParams.initParams.initialEth); // 5e18 weth
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidity(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.wethDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = _addLiquidityWithSomeWeth();
 
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
@@ -108,28 +68,8 @@ contract GoatV1RouterTest is BaseTest {
 
     function testAddLiquiditySuccessFirstWithAllWeth() public {
         // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        addLiqParams.initParams.initialEth = 10e18; // set all weth
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-        weth.approve(address(router), addLiqParams.initParams.initialEth); // 10e18 weth
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidity(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.wethDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend) =
+            _addLiquidityAndConvertToAmm();
 
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
@@ -157,29 +97,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testAddLiqudityEthSuccessFirstWithoutEth() public {
-        // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidityETH{
-            value: addLiqParams.initParams.initialEth
-        }(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
-
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = _addLiquidityWithoutEth();
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
         uint256 expectedLiquidity = Math.sqrt(10e18 * 1000e18) - 1000;
@@ -198,26 +116,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testAddLiqudityEthSuccessFirstWithSomeEth() public {
-        // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidityETH{value: 5e18}(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = _addLiquidityWithSomeEth();
 
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
@@ -246,28 +145,8 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testAddLiqudityEthSuccessFirstWithAllEth() public {
-        // get the actual amount with view function
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        addLiqParams.initParams.initialEth = 10e18; // set all weth
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidityETH{value: 10e18}(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
-
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend) =
+            _addLiquidityEthAndConvertToAmm();
         // check how much liqudity is minted to the LP
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
         /**
@@ -294,28 +173,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testAddLiquidityWethAfterPesale() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        addLiqParams.initParams.initialEth = 10e18; // set all weth
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-        weth.approve(address(router), addLiqParams.initParams.initialEth); // 10e18 weth
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidity(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.wethDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        _addLiquidityAndConvertToAmm();
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
         uint256 lpTotalSupply = pair.totalSupply();
         //AT THIS POINT PRESALE IS ENDED
@@ -330,7 +188,7 @@ contract GoatV1RouterTest is BaseTest {
         addLiqParams.to = lp_1; // change to lp
         // (uint256 reserveEth, uint256 reserveToken) = pair.getReserves(); // get reserves before adding liquidity to check for Lp minted later
 
-        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidity(
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidity(
             addLiqParams.token,
             addLiqParams.tokenDesired,
             addLiqParams.wethDesired,
@@ -359,26 +217,7 @@ contract GoatV1RouterTest is BaseTest {
     /* ------------------- CHECK PAIR STATE AFTER ADDLIQUIDITY ------------------ */
 
     function testCheckPairStateAfterAddLiquidityIfWethSentIsZero() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-
-        router.addLiquidity(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.wethDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        _addLiquidityWithoutWeth();
 
         // check  state of pair
         GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
@@ -404,33 +243,13 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(pair.getPresaleBalance(addLiqParams.to), 0);
         GoatTypes.InitialLPInfo memory lpInfo = pair.getInitialLPInfo();
         assertEq(lpInfo.liquidityProvider, addLiqParams.to);
-        // assertEq(lpInfo.fractionalBalance, 25e18);
+        assertEq(lpInfo.fractionalBalance, 25e18 - 250);
         assertEq(lpInfo.withdrawlLeft, 4);
         assertEq(lpInfo.lastWithdraw, 0);
     }
 
     function testAddLiqudityEthAfterPresale() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
-        addLiqParams.initParams.initialEth = 10e18; // set all weth
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
-            addLiqParams.initParams.virtualEth,
-            addLiqParams.initParams.bootstrapEth,
-            addLiqParams.initParams.initialEth,
-            addLiqParams.initParams.initialTokenMatch
-        );
-
-        token.approve(address(router), actualTokenAmountToSend);
-        weth.approve(address(router), addLiqParams.initParams.initialEth); // 10e18 weth
-
-        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidityETH{value: 10e18}(
-            addLiqParams.token,
-            addLiqParams.tokenDesired,
-            addLiqParams.tokenMin,
-            addLiqParams.wethMin,
-            addLiqParams.to,
-            addLiqParams.deadline,
-            addLiqParams.initParams
-        );
+        _addLiquidityEthAndConvertToAmm();
         GoatV1Pair pair = GoatV1Pair(factory.getPool(addLiqParams.token));
         uint256 lpTotalSupply = pair.totalSupply();
         //AT THIS POINT PRESALE IS ENDED
@@ -444,7 +263,7 @@ contract GoatV1RouterTest is BaseTest {
         addLiqParams.to = lp_1; // change to lp
         // (uint256 reserveEth, uint256 reserveToken) = pair.getReserves(); // get reserves before adding liquidity to check for Lp minted later
 
-        (tokenAmtUsed, wethAmtUsed, liquidity) = router.addLiquidityETH{value: 1e18}(
+        (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity) = router.addLiquidityETH{value: 1e18}(
             addLiqParams.token,
             addLiqParams.tokenDesired,
             addLiqParams.tokenMin,
@@ -472,7 +291,7 @@ contract GoatV1RouterTest is BaseTest {
     /* ------------------------------ REVERTS TESTS ADD LIQUIDITY AT ROUTER LEVEL----------------------------- */
 
     function testRevertIfTokenIsWeth() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
         addLiqParams.token = address(weth);
         token.approve(address(router), addLiqParams.tokenDesired);
         weth.approve(address(router), addLiqParams.wethDesired);
@@ -490,7 +309,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testRevertIfTokenIsZeroAddress() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
         addLiqParams.token = address(weth);
         token.approve(address(router), addLiqParams.tokenDesired);
         weth.approve(address(router), addLiqParams.wethDesired);
@@ -508,7 +327,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testRevertIfDeadlineIsPassed() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
         vm.expectRevert(GoatErrors.Expired.selector);
         router.addLiquidity(
             addLiqParams.token,
@@ -523,7 +342,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testRevertIfNotEnoughTokenIsApprovedToRouter() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
         uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
@@ -546,7 +365,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testRevertIfNotEnoughEthIsSent() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, true);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
         uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
@@ -568,7 +387,7 @@ contract GoatV1RouterTest is BaseTest {
     }
 
     function testRevertIfInitialAmountIsSetToZeroButSomeEthIsSent() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false); // no initial eth
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false); // no initial eth
         addLiqParams.initParams.initialEth = 0;
         uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
             addLiqParams.initParams.virtualEth,
@@ -593,7 +412,7 @@ contract GoatV1RouterTest is BaseTest {
     /* ------------------------------ REVERTS TESTS ADD LIQUIDITY AT PAIR LEVEL----------------------------- */
 
     function testRevertIfAddLiquidityInPresalePeriod() public {
-        BaseTest.AddLiqudityParams memory addLiqParams = addLiquidityParams(true, false);
+        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
 
         uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
             addLiqParams.initParams.virtualEth,
@@ -632,4 +451,186 @@ contract GoatV1RouterTest is BaseTest {
         );
         vm.stopPrank();
     }
+
+    /* ------------------------------- REMOVE LIQUDITY SUCCESS TESTS ------------------------------- */
+
+    function testRemoveLiquiditySuccess() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+
+        uint256 balanceToken = token.balanceOf(address(pair));
+        uint256 balanceEth = weth.balanceOf(address(pair));
+        uint256 totalSupply = pair.totalSupply();
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        pair.approve(address(router), userLiquidity);
+        // remove liquidity
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        (uint256 amountWeth, uint256 amountToken) =
+            router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+
+        uint256 expectedWeth = (fractionalLiquidity * balanceEth) / totalSupply;
+        uint256 expectedToken = (fractionalLiquidity * balanceToken) / totalSupply;
+        assertEq(amountWeth, expectedWeth);
+        assertEq(amountToken, expectedToken);
+        assertEq(pair.balanceOf(address(this)), userLiquidity - fractionalLiquidity);
+        uint256 currentTotalSupply = totalSupply - fractionalLiquidity;
+        assertEq(pair.totalSupply(), currentTotalSupply);
+        assertEq(token.balanceOf(address(pair)), balanceToken - expectedToken);
+        assertEq(weth.balanceOf(address(pair)), balanceEth - expectedWeth);
+
+        assertEq(weth.balanceOf(lp_1), expectedWeth);
+        assertEq(token.balanceOf(lp_1), expectedToken);
+    }
+
+    function testRemoveLiquidityEth() public {
+        _addLiquidityEthAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 balanceToken = token.balanceOf(address(pair));
+        uint256 balanceEth = weth.balanceOf(address(pair));
+        uint256 totalSupply = pair.totalSupply();
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 userEthBalBefore = lp_1.balance;
+        pair.approve(address(router), userLiquidity);
+        // remove liquidity
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        (uint256 amountWeth, uint256 amountToken) =
+            router.removeLiquidityETH(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+
+        uint256 expectedEth = (fractionalLiquidity * balanceEth) / totalSupply;
+        uint256 expectedToken = (fractionalLiquidity * balanceToken) / totalSupply;
+        assertEq(amountWeth, expectedEth);
+        assertEq(amountToken, expectedToken);
+        assertEq(pair.balanceOf(address(this)), userLiquidity - fractionalLiquidity);
+        uint256 currentTotalSupply = totalSupply - fractionalLiquidity;
+        assertEq(pair.totalSupply(), currentTotalSupply);
+        assertEq(lp_1.balance, userEthBalBefore + expectedEth);
+        assertEq(token.balanceOf(lp_1), expectedToken);
+    }
+
+    function testRemoveLiquidityUpdateFeesIfSwapIsDoneBeforePresale() public {
+        /**
+         * @dev lp add initial liqudity and someone swaps before presale ends, the initial Lp should be able
+         *     to claim his fees from swap after the presale ends
+         */
+
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 1e18);
+        // vm.startPrank(swapper);
+        //TODO: Do this testing after completing swap function and it's test
+    }
+
+    function testRemoveLiquidityUpdateFeesIfSwapIsDoneAfterPresale() public {
+        /**
+         * @dev lp add initial liqudity and someone swaps before presale ends, the initial Lp should be able
+         *     to claim his fees from swap after the presale ends
+         */
+
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 5e18);
+        vm.startPrank(swapper);
+        //TODO: Do this testing after completing swap function and it's test
+    }
+
+    /* ------------------------------ REVERTS TESTS REMOVE LIQUIDITY ----------------------------- */
+
+    function testRevertIfRemoveLiquidityInPresale() public {
+        _addLiquidityWithSomeWeth();
+        vm.warp(block.timestamp + 2 days); // forward time to remove lock
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 fractionalLiquidity = pair.balanceOf(address(this)) / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        vm.expectRevert(GoatErrors.PresalePeriod.selector);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
+
+    function testRevertIfRemoveLiquidityInLockPeriod() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 fractionalLiquidity = pair.balanceOf(address(this)) / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        vm.expectRevert(GoatErrors.LiquidityLocked.selector);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
+
+    function testRevertIfRemoveLiquidityEthInPresale() public {
+        _addLiquidityWithSomeEth();
+        vm.warp(block.timestamp + 2 days); // forward time to remove lock
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 fractionalLiquidity = pair.balanceOf(address(this)) / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        vm.expectRevert(GoatErrors.PresalePeriod.selector);
+        router.removeLiquidityETH(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
+
+    function testRevertIfRemoveLiquidityEthInLockPeriod() public {
+        _addLiquidityEthAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 fractionalLiquidity = pair.balanceOf(address(this)) / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        vm.expectRevert(GoatErrors.LiquidityLocked.selector);
+        router.removeLiquidityETH(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
+
+    // function testCheckReserveAfterRemoveLiquidity() public {
+
+    // }
+
+    //function testCheckStateAfterBurn
+
+    /* ------------------------------- SWAP TESTS ------------------------------- */
+
+    function testSwapWethToTokenSuccessInPresale() public {
+        _addLiquidityWithoutWeth();
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = 5e18 * 99 / 10000; // 1% fee
+        //calculate amt out after deducting fee
+        uint256 numerator = (5e18 - fees) * (250e18 + 750e18);
+        uint256 denominator = (0 + 10e18) + (5e18 - fees);
+        uint256 expectedAmountOut = numerator / denominator;
+        assertEq(amountOut, expectedAmountOut);
+    }
+
+    // function testCheckStateAfterSwapWethToTokenSuccessInPresale() public {
+    //     _addLiquidityWithoutWeth();
+    //     GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+    //     weth.transfer(swapper, 5e18); // send some weth to swapper
+    //     vm.startPrank(swapper);
+    //     weth.approve(address(router), 5e18);
+
+    //     uint256 amountOut = router.swapWethForExactTokens(
+    //         5e18,
+    //         0, // no slippage protection for now
+    //         address(token),
+    //         swapper,
+    //         block.timestamp
+    //     );
+    //     vm.stopPrank();
+    //     uint256 fees = 5e18 * 99 / 10000; // 1% fee
+    //     assertEq(token.balanceOf(swapper), amountOut);
+    //     assertEq(weth.balanceOf(swapper), 0);
+    //     // Checks if fees are updated for lp
+    //     assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
+    //     assertEq(pair.getPendingLiquidityFees(), fees * 40 / 100); // 40% of fees
+    //     console2.log("Lp fees", pair.getPendingLiquidityFees());
+    //     console2.log("total Spply", pair.totalSupply());
+    //     uint256 scale = 1e18;
+    //     uint256 expectedFeePerToken = pair.getPendingLiquidityFees() * scale / pair.totalSupply();
+    //     //    assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+    // }
 }
