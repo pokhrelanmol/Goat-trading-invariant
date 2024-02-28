@@ -131,7 +131,7 @@ contract GoatExchangeTest is Test {
         assertEq(initialLPInfo.liquidityProvider, users.lp);
         assertEq(initialLPInfo.fractionalBalance, expectedFractionalBalance);
         assertEq(initialLPInfo.lastWithdraw, 0);
-        assertEq(initialLPInfo.withdrawlLeft, 4);
+        assertEq(initialLPInfo.withdrawalLeft, 4);
     }
 
     function testMintSuccessWithFullBootstrapEth() public {
@@ -295,7 +295,7 @@ contract GoatExchangeTest is Test {
 
         assertEq(initialLPInfoAfterBurn.fractionalBalance, initialLPInfo.fractionalBalance);
         assertEq(initialLPInfoAfterBurn.lastWithdraw, block.timestamp);
-        assertEq(initialLPInfoAfterBurn.withdrawlLeft, initialLPInfo.withdrawlLeft - 1);
+        assertEq(initialLPInfoAfterBurn.withdrawalLeft, initialLPInfo.withdrawalLeft - 1);
 
         assertEq(totalSupplyBefore - totalSupplyAfter, initialLPInfo.fractionalBalance);
 
@@ -440,10 +440,11 @@ contract GoatExchangeTest is Test {
         uint256 wethBalBefore = weth.balanceOf(users.bob);
         uint256 tokenBalBefore = goat.balanceOf(users.bob);
 
-        vm.startPrank(users.bob);
-        pair.transfer(address(pair), bobLpBalance);
         uint256 warpTime = block.timestamp + 3 days;
         vm.warp(warpTime);
+
+        vm.startPrank(users.bob);
+        pair.transfer(address(pair), bobLpBalance);
         pair.burn(users.bob);
 
         uint256 wethBalAfter = weth.balanceOf(users.bob);
@@ -488,7 +489,7 @@ contract GoatExchangeTest is Test {
         uint256 expectedFractionalBalance = lpBalance / 4;
         GoatTypes.InitialLPInfo memory initialLPInfoBefore = pair.getInitialLPInfo();
 
-        assertEq(initialLPInfoBefore.withdrawlLeft, 4);
+        assertEq(initialLPInfoBefore.withdrawalLeft, 4);
         assertEq(expectedFractionalBalance, initialLPInfoBefore.fractionalBalance);
 
         vm.startPrank(users.alice);
@@ -504,7 +505,7 @@ contract GoatExchangeTest is Test {
         GoatTypes.InitialLPInfo memory initialLPInfoAfter = pair.getInitialLPInfo();
         lpBalance = pair.balanceOf(users.lp);
         expectedFractionalBalance = lpBalance / 4;
-        assertEq(initialLPInfoAfter.withdrawlLeft, 4);
+        assertEq(initialLPInfoAfter.withdrawalLeft, 4);
         assertEq(expectedFractionalBalance, initialLPInfoAfter.fractionalBalance);
     }
 

@@ -17,11 +17,15 @@ contract GoatV1ERC20 {
     // Owner's _allowancess for another account
     mapping(address => mapping(address => uint256)) private _allowances;
 
+    // liquidity lock
+    mapping(address => uint32) internal _locked;
+
     // Events
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     function _mint(address _to, uint256 _value) internal {
+        _locked[_to] = uint32(block.timestamp + 2 days);
         _totalSupply += _value;
         _balances[_to] += _value;
         emit Transfer(address(0), _to, _value);

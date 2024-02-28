@@ -55,7 +55,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     uint72 private _pendingProtocolFees;
 
     mapping(address => uint256) private _presaleBalances;
-    mapping(address => uint32) private _locked;
     mapping(address => uint256) public lpFees;
     mapping(address => uint256) public feesPerTokenPaid;
 
@@ -183,26 +182,24 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             // Do not allow to add liquidity in presale period
             if (totalSupply_ > 0) revert GoatErrors.PresalePeriod();
             // don't allow to send more eth than bootstrap eth
-            if (balanceEth > _bootstrapEth) {
+            if (balanceEth > mintVars.bootstrapEth) {
                 revert GoatErrors.SupplyMoreThanBootstrapEth();
             }
 
-            // @note make sure balance token is equal to expected token amount
-            (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) = _tokenAmountsForLiquidityBootstrap(
-                mintVars.virtualEth, mintVars.bootstrapEth, balanceEth, mintVars.initialTokenMatch
-            );
-            if (balanceToken < (tokenAmtForPresale + tokenAmtForAmm)) {
-                revert GoatErrors.InsufficientTokenAmount();
-            }
-
             if (balanceEth < mintVars.bootstrapEth) {
+                (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) = _tokenAmountsForLiquidityBootstrap(
+                    mintVars.virtualEth, mintVars.bootstrapEth, balanceEth, mintVars.initialTokenMatch
+                );
+                if (balanceToken != (tokenAmtForPresale + tokenAmtForAmm)) {
+                    revert GoatErrors.InsufficientTokenAmount();
+                }
                 liquidity =
                     Math.sqrt(uint256(mintVars.virtualEth) * uint256(mintVars.initialTokenMatch)) - MINIMUM_LIQUIDITY;
             } else {
                 // This means that user is willing to make this pool an amm pool in first liquidity mint
-                liquidity = Math.sqrt(balanceEth * tokenAmtForAmm) - MINIMUM_LIQUIDITY;
+                liquidity = Math.sqrt(balanceEth * balanceToken) - MINIMUM_LIQUIDITY;
                 uint32 timestamp = uint32(block.timestamp);
-                _vestingUntil = timestamp;
+                _vestingUntil = timestamp + VESTING_PERIOD;
             }
             mintVars.isFirstMint = true;
         } else {
@@ -244,7 +241,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // don't check fractional balance if withdrawalLeft is 1
         // user should be allowed to withdraw dust liquidity created
         // due to division by 4 at this point
-        if (info.withdrawlLeft == 1) {
+        if (info.withdrawalLeft == 1) {
             uint256 balance = balanceOf(info.liquidityProvider);
             if (liquidity != balance) {
                 revert GoatErrors.ShouldWithdrawAllBalance();
@@ -253,7 +250,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // For system to function correctly initial lp should be
         // able to withdraw exactly fractional balance that is stored
-        // as we are allowing 4 withdrawls
+        // as we are allowing 4 withdrawals
         if (liquidity != info.fractionalBalance) {
             revert GoatErrors.BurnLimitExceeded();
         }
@@ -268,11 +265,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         } else if (isBurn) {
             if (lp == info.liquidityProvider) {
                 info.lastWithdraw = uint32(block.timestamp);
-                info.withdrawlLeft -= 1;
+                info.withdrawalLeft -= 1;
             }
         } else {
-            info.fractionalBalance = uint112(((info.fractionalBalance * info.withdrawlLeft) + liquidity) / 4);
-            info.withdrawlLeft = 4;
+            info.fractionalBalance = uint112(((info.fractionalBalance * info.withdrawalLeft) + liquidity) / 4);
+            info.withdrawalLeft = 4;
             info.liquidityProvider = lp;
         }
 
@@ -281,13 +278,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     function burn(address to) external returns (uint256 amountWeth, uint256 amountToken) {
-        // Burn liquidity tokens
-        if (_locked[_lastPoolTokenSender] > block.timestamp) {
-            revert GoatErrors.LiquidityLocked();
-        }
-
         uint256 liquidity = balanceOf(address(this));
 
+        // initial lp can bypass this check by using different
+        // to address so _lastPoolTokenSender is used
         if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
             _handleInitialLiquidityProviderChecks(liquidity);
             _updateInitialLpInfo(liquidity, to, true, false);
@@ -564,11 +558,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (from == lpInfo.liquidityProvider && to != address(this) || to == _initialLPInfo.liquidityProvider) {
             revert GoatErrors.LPTransferRestricted();
         }
+        if (_locked[from] > block.timestamp) {
+            revert GoatErrors.LiquidityLocked();
+        }
 
-        // Lock the tokens if they are not being transferred to this contract
-        if (to != address(this)) {
-            _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
-        } else {
+        if (to == address(this)) {
             // We need to store from if lp is being sent to address(this) because
             // initial user can bypass the checks inside burn by passing from argument
             _lastPoolTokenSender = from;
@@ -598,9 +592,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function vestingUntil() external view returns (uint32 vestingUntil_) {
         vestingUntil_ = _vestingUntil;
-        if (vestingUntil_ != _MAX_UINT32) {
-            vestingUntil_ += VESTING_PERIOD;
-        }
     }
 
     function getStateInfo()
