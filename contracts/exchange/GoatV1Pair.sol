@@ -210,7 +210,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
 
         if (mintVars.isFirstMint || to == _initialLPInfo.liquidityProvider) {
-            _updateInitialLpInfo(liquidity, to, false, false);
+            _updateInitialLpInfo(liquidity, balanceEth, to, false, false);
         }
 
         _updateFeeRewards(to);
@@ -256,7 +256,9 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
     }
 
-    function _updateInitialLpInfo(uint256 liquidity, address lp, bool isBurn, bool internalBurn) internal {
+    function _updateInitialLpInfo(uint256 liquidity, uint256 wethAmt, address lp, bool isBurn, bool internalBurn)
+        internal
+    {
         GoatTypes.InitialLPInfo memory info = _initialLPInfo;
 
         if (internalBurn) {
@@ -271,6 +273,9 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             info.fractionalBalance = uint112(((info.fractionalBalance * info.withdrawalLeft) + liquidity) / 4);
             info.withdrawalLeft = 4;
             info.liquidityProvider = lp;
+            if (wethAmt != 0) {
+                info.initialWethAdded = wethAmt;
+            }
         }
 
         // Update initial liquidity provider info
@@ -279,12 +284,12 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function burn(address to) external returns (uint256 amountWeth, uint256 amountToken) {
         uint256 liquidity = balanceOf(address(this));
-
+        address tokenSender = _lastPoolTokenSender;
         // initial lp can bypass this check by using different
         // to address so _lastPoolTokenSender is used
-        if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
+        if (_lastPoolTokenSender == tokenSender) {
             _handleInitialLiquidityProviderChecks(liquidity);
-            _updateInitialLpInfo(liquidity, to, true, false);
+            _updateInitialLpInfo(liquidity, 0, tokenSender, true, false);
         }
 
         uint256 balanceEth = IERC20(_weth).balanceOf(address(this));
@@ -460,6 +465,51 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _update(reserveEth, tokenAmtForAmm, true);
     }
 
+    // teams can use this function to take over the pool by adding
+    // at least 10% more tokens and weth added by the initial LP.
+    // This function can be used to bypass griefing by the malicious users
+    function takeOverPool(address to) external {
+        if (_vestingUntil != _MAX_UINT32) {
+            revert GoatErrors.ActionNotAllowed();
+        }
+        uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
+        uint256 wethBalance = IERC20(_weth).balanceOf(address(this));
+        uint256 tokenAmount = tokenBalance - _reserveToken;
+        // @note is there a need to add 10% extra weth as well?
+        uint256 wethAmount = wethBalance - _reserveEth;
+        GoatTypes.InitialLPInfo memory initialLpInfo = _initialLPInfo;
+
+        //
+        (uint256 tokenAmountForPresale, uint256 tokenAmountForAmm) = _tokenAmountsForLiquidityBootstrap(
+            _virtualEth, _bootstrapEth, initialLpInfo.initialWethAdded, _initialTokenMatch
+        );
+
+        // @note should I check against 10% wethAmount?
+        if (wethAmount != initialLpInfo.initialWethAdded) {
+            revert GoatErrors.InsufficientWethAmount();
+        }
+
+        // team needs to add min 10% more tokens than the initial lp to take over
+        uint256 minTokenNeeded = ((tokenAmountForPresale + tokenAmountForAmm) * 11000) / 10000;
+        // @note should I use < instead of !=? what attack vectors would it bring?
+        if (minTokenNeeded < tokenAmount) {
+            revert GoatErrors.InsufficientTokenAmount();
+        }
+        uint256 lpBalance = balanceOf(initialLpInfo.liquidityProvider);
+        _transfer(initialLpInfo.liquidityProvider, to, lpBalance, true);
+        _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
+
+        // transfer excess token to the initial liquidity provider
+        IERC20(_token).safeTransfer(to, (tokenAmountForPresale + tokenAmountForAmm));
+        if (initialLpInfo.initialWethAdded != 0) {
+            IERC20(_weth).safeTransfer(to, initialLpInfo.initialWethAdded);
+        }
+        // final balance check
+        tokenBalance = IERC20(_token).balanceOf(address(this));
+        // update reserves
+        _update(_reserveEth, tokenBalance, false);
+    }
+
     function _burnLiquidityAndConvertToAmm(uint256 actualEthReserve, uint256 actualTokenReserve) internal {
         address initialLiquidityProvider = _initialLPInfo.liquidityProvider;
 
@@ -469,7 +519,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         uint256 liquidityToBurn = initialLPBalance - liquidity;
 
-        _updateInitialLpInfo(liquidity, initialLiquidityProvider, false, true);
+        _updateInitialLpInfo(liquidity, 0, initialLiquidityProvider, false, true);
         // @note can I read balanceOf just once? :thinking_face
         _updateFeeRewards(initialLiquidityProvider);
         _burn(initialLiquidityProvider, liquidityToBurn);
@@ -552,20 +602,22 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     // handle initial liquidity provider checks and update locked if lp is transferred
-    function _beforeTokenTransfer(address from, address to, uint256) internal override {
-        GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
+    function _beforeTokenTransfer(address from, address to, uint256, bool bypassCheck) internal override {
+        if (!bypassCheck) {
+            GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
 
-        if (from == lpInfo.liquidityProvider && to != address(this) || to == _initialLPInfo.liquidityProvider) {
-            revert GoatErrors.LPTransferRestricted();
-        }
-        if (_locked[from] > block.timestamp) {
-            revert GoatErrors.LiquidityLocked();
-        }
+            if (from == lpInfo.liquidityProvider && to != address(this) || to == _initialLPInfo.liquidityProvider) {
+                revert GoatErrors.LPTransferRestricted();
+            }
+            if (_locked[from] > block.timestamp) {
+                revert GoatErrors.LiquidityLocked();
+            }
 
-        if (to == address(this)) {
-            // We need to store from if lp is being sent to address(this) because
-            // initial user can bypass the checks inside burn by passing from argument
-            _lastPoolTokenSender = from;
+            if (to == address(this)) {
+                // We need to store from if lp is being sent to address(this) because
+                // initial user can bypass the checks inside burn by passing from argument
+                _lastPoolTokenSender = from;
+            }
         }
 
         // Update fee rewards for both sender and receiver

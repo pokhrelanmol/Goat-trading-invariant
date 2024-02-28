@@ -172,8 +172,7 @@ library GoatLibrary {
         uint256 reserveEth,
         uint256 reserveToken,
         uint256 virtualEth,
-        uint256 virtualToken,
-        uint32 vestingUntil
+        uint256 virtualToken
     ) internal pure returns (uint256 amountWethOut) {
         if (amountTokenIn == 0) revert GoatErrors.InsufficientInputAmount();
         if (reserveEth == 0 || reserveToken == 0) revert GoatErrors.InsufficientLiquidity();

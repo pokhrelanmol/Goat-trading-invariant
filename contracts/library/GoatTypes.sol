@@ -52,9 +52,10 @@ contract GoatTypes {
 
     struct InitialLPInfo {
         address liquidityProvider;
+        uint256 initialWethAdded;
         uint112 fractionalBalance;
         uint32 lastWithdraw;
-        uint8 withdrawlLeft;
+        uint8 withdrawalLeft;
     }
 
     struct LocalVariables_AddLiquidity {

@@ -244,7 +244,7 @@ contract GoatV1RouterTest is BaseTest {
         GoatTypes.InitialLPInfo memory lpInfo = pair.getInitialLPInfo();
         assertEq(lpInfo.liquidityProvider, addLiqParams.to);
         assertEq(lpInfo.fractionalBalance, 25e18 - 250);
-        assertEq(lpInfo.withdrawlLeft, 4);
+        assertEq(lpInfo.withdrawalLeft, 4);
         assertEq(lpInfo.lastWithdraw, 0);
     }
 
