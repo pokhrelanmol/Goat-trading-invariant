@@ -243,16 +243,19 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // due to division by 4 at this point
         if (info.withdrawalLeft == 1) {
             uint256 balance = balanceOf(info.liquidityProvider);
-            if (liquidity != balance) {
+            // as lps transfer liqudity to the pool when they send
+            // last withdraw request initial lp balance should be 0
+            // so that dust amount will not be stuck in the pool
+            if (balance != 0) {
                 revert GoatErrors.ShouldWithdrawAllBalance();
             }
-        }
-
-        // For system to function correctly initial lp should be
-        // able to withdraw exactly fractional balance that is stored
-        // as we are allowing 4 withdrawals
-        if (liquidity != info.fractionalBalance) {
-            revert GoatErrors.BurnLimitExceeded();
+        } else {
+            // For system to function correctly initial lp should be
+            // able to withdraw exactly fractional balance that is stored
+            // as we are allowing 4 withdrawals
+            if (liquidity != info.fractionalBalance) {
+                revert GoatErrors.BurnLimitExceeded();
+            }
         }
     }
 
@@ -284,12 +287,12 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     function burn(address to) external returns (uint256 amountWeth, uint256 amountToken) {
         uint256 liquidity = balanceOf(address(this));
-        address tokenSender = _lastPoolTokenSender;
+
         // initial lp can bypass this check by using different
         // to address so _lastPoolTokenSender is used
-        if (_lastPoolTokenSender == tokenSender) {
+        if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
             _handleInitialLiquidityProviderChecks(liquidity);
-            _updateInitialLpInfo(liquidity, 0, tokenSender, true, false);
+            _updateInitialLpInfo(liquidity, 0, _initialLPInfo.liquidityProvider, true, false);
         }
 
         uint256 balanceEth = IERC20(_weth).balanceOf(address(this));

@@ -266,7 +266,6 @@ contract GoatV1Router is ReentrancyGuard {
         );
 
         //EXPECTED: 5000e18 / 15e18 = 333e18 - fee
-        console2.log("amountTokenOut", amountTokenOut);
         if (amountTokenOut < amountOutMin) {
             revert GoatErrors.InsufficientAmountOut();
         }
