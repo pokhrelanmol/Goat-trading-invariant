@@ -104,4 +104,14 @@ contract GoatTypes {
         uint32 vestingUntil;
         uint256 bootstrapEth;
     }
+
+    struct LocalVariables_TokenAmountOutInfo {
+        uint256 actualWethIn;
+        uint256 numerator;
+        uint256 denominator;
+        uint256 amountTokenOutPresale;
+        uint256 amountTokenOutAmm;
+        uint256 wethForAmm;
+        uint256 wethForPresale;
+    }
 }

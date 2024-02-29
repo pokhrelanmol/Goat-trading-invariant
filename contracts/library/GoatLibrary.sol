@@ -109,43 +109,36 @@ library GoatLibrary {
         uint256 reserveTokenForAmm
     ) internal pure returns (uint256 amountTokenOut) {
         if (amountWethIn == 0) revert GoatErrors.InsufficientInputAmount();
+        GoatTypes.LocalVariables_TokenAmountOutInfo memory vars;
 
         // 100 bps is considered as fees
-        uint256 actualWethIn = amountWethIn * 9901;
+        vars.actualWethIn = amountWethIn * 9901;
 
-        uint256 numerator;
-        uint256 denominator;
-
-        uint256 amountTokenOutPresale;
-        uint256 amountTokenOutAmm;
         if (vestingUntil != type(uint32).max) {
             // amm logic
-            numerator = actualWethIn * reserveToken;
-            denominator = reserveEth * 10000 + actualWethIn;
-            amountTokenOutAmm = numerator / denominator;
+            vars.numerator = vars.actualWethIn * reserveToken;
+            vars.denominator = reserveEth * 10000 + vars.actualWethIn;
+            vars.amountTokenOutAmm = vars.numerator / vars.denominator;
         } else {
             // Scale actual weth down
-            actualWethIn = actualWethIn / 10000;
+            vars.actualWethIn = vars.actualWethIn / 10000;
 
-            uint256 wethForAmm;
-            uint256 wethForPresale;
-
-            if (reserveEth + actualWethIn > bootStrapEth) {
-                wethForAmm = (reserveEth + actualWethIn) - bootStrapEth;
+            if (reserveEth + vars.actualWethIn > bootStrapEth) {
+                vars.wethForAmm = (reserveEth + vars.actualWethIn) - bootStrapEth;
             }
-            wethForPresale = (actualWethIn - wethForAmm) * 10000;
-            numerator = wethForPresale * (virtualToken + reserveToken);
-            denominator = (reserveEth + virtualEth) * 10000 + wethForPresale;
-            amountTokenOutPresale = numerator / denominator;
+            vars.wethForPresale = (vars.actualWethIn - vars.wethForAmm) * 10000;
+            vars.numerator = vars.wethForPresale * (virtualToken + reserveToken);
+            vars.denominator = (reserveEth + virtualEth) * 10000 + vars.wethForPresale;
+            vars.amountTokenOutPresale = vars.numerator / vars.denominator;
 
-            if (wethForAmm > 0) {
-                wethForAmm = wethForAmm * 10000;
-                numerator = wethForAmm * reserveTokenForAmm;
-                denominator = bootStrapEth * 10000 + wethForAmm;
-                amountTokenOutAmm = numerator / denominator;
+            if (vars.wethForAmm > 0) {
+                vars.wethForAmm = vars.wethForAmm * 10000;
+                vars.numerator = vars.wethForAmm * reserveTokenForAmm;
+                vars.denominator = bootStrapEth * 10000 + vars.wethForAmm;
+                vars.amountTokenOutAmm = vars.numerator / vars.denominator;
             }
         }
-        amountTokenOut = amountTokenOutPresale + amountTokenOutAmm;
+        amountTokenOut = vars.amountTokenOutPresale + vars.amountTokenOutAmm;
     }
 
     function getWethAmountOutAmm(uint256 amountTokenIn, uint256 reserveEth, uint256 reserveToken)
