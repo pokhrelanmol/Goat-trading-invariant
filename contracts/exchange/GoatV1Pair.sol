@@ -122,8 +122,8 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         address treasury = _factory.treasury();
 
         if (pendingProtocolFees > minCollectableFees) {
-            pendingProtocolFees = 0;
             IERC20(_weth).safeTransfer(treasury, pendingProtocolFees);
+            pendingProtocolFees = 0;
         }
         _pendingProtocolFees = uint72(pendingProtocolFees);
     }
@@ -320,7 +320,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     // should be called from a contract with safety checks
-    function swap(uint256 amountTokenOut, uint256 amountWethOut, address to) external {
+    function swap(uint256 amountTokenOut, uint256 amountWethOut, address to) external nonReentrant {
         if (amountTokenOut == 0 && amountWethOut == 0) {
             revert GoatErrors.InsufficientOutputAmount();
         }
@@ -355,7 +355,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // We store details of participants so that we only allow users who have
         // swap back tokens who have bought in the vesting period.
-        if (swapVars.vestingUntil > block.timestamp - _THIRTY_DAYS) {
+        if (swapVars.vestingUntil > block.timestamp) {
             _updatePresale(to, swapVars.tokenAmount, swapVars.isBuy);
         }
 
@@ -494,10 +494,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // team needs to add min 10% more tokens than the initial lp to take over
         uint256 minTokenNeeded = ((tokenAmountForPresale + tokenAmountForAmm) * 11000) / 10000;
-        // @note should I use < instead of !=? what attack vectors would it bring?
-        if (minTokenNeeded < tokenAmount) {
+        if (tokenAmount < minTokenNeeded) {
             revert GoatErrors.InsufficientTokenAmount();
         }
+
+        //
         uint256 lpBalance = balanceOf(initialLpInfo.liquidityProvider);
         _transfer(initialLpInfo.liquidityProvider, to, lpBalance, true);
         _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
@@ -526,7 +527,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // @note can I read balanceOf just once? :thinking_face
         _updateFeeRewards(initialLiquidityProvider);
         _burn(initialLiquidityProvider, liquidityToBurn);
-        _vestingUntil = uint32(block.timestamp);
+        _vestingUntil = uint32(block.timestamp + VESTING_PERIOD);
     }
 
     function _checkAndConvertPool(uint256 initialReserveEth, uint256 initialReserveToken) internal {
@@ -649,6 +650,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         vestingUntil_ = _vestingUntil;
     }
 
+    // read for test purposes only
     function getStateInfo()
         external
         view
@@ -671,6 +673,30 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         lastTrade = _lastTrade;
         bootstrapEth = _bootstrapEth;
         genesis = _genesis;
+    }
+
+    function getStateInfoForPresale()
+        external
+        view
+        returns (
+            uint112 reserveEth,
+            uint112 reserveToken,
+            uint112 virtualEth,
+            uint112 initialTokenMatch,
+            uint112 bootstrapEth,
+            uint256 virtualToken
+        )
+    {
+        reserveEth = _reserveEth;
+        reserveToken = _reserveToken;
+        virtualEth = _virtualEth;
+        initialTokenMatch = _initialTokenMatch;
+        bootstrapEth = _bootstrapEth;
+        virtualToken = _getVirtualToken(virtualEth, bootstrapEth, initialTokenMatch);
+    }
+
+    function getStateInfoAmm() external view returns (uint112, uint112) {
+        return (_reserveEth, _reserveToken);
     }
 
     function getInitialLPInfo() external view returns (GoatTypes.InitialLPInfo memory) {
