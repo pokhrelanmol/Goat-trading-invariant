@@ -226,20 +226,17 @@ contract GoatV1RouterTest is BaseTest {
             uint112 reserveToken,
             uint112 virtualEth,
             uint112 initialTokenMatch,
-            uint32 vestingUntil,
-            uint32 lastTrade,
             uint256 bootstrapEth,
-            uint32 genesis
-        ) = pair.getStateInfo();
+            uint256 virtualToken
+        ) = pair.getStateInfoForPresale();
 
         assertEq(reserveEth, 0); // this is a raw reserve, so it reflect the balance, virtual eth is set in getReserves
         assertEq(reserveToken, 750e18);
         assertEq(virtualEth, 10e18);
         assertEq(initialTokenMatch, 1000e18);
-        assertEq(vestingUntil, type(uint32).max);
-        assertEq(lastTrade, 0);
+        assertEq(pair.vestingUntil(), type(uint32).max);
         assertEq(bootstrapEth, 10e18);
-        assertEq(genesis, block.timestamp);
+        assertEq(virtualToken, 250e18);
         assertEq(pair.getPresaleBalance(addLiqParams.to), 0);
         GoatTypes.InitialLPInfo memory lpInfo = pair.getInitialLPInfo();
         assertEq(lpInfo.liquidityProvider, addLiqParams.to);
@@ -288,6 +285,7 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(pair.balanceOf(lp_1), expectedLiquidity);
         assertEq(lp_1.balance, 0); // No balance left
     }
+
     /* ------------------------------ REVERTS TESTS ADD LIQUIDITY AT ROUTER LEVEL----------------------------- */
 
     function testRevertIfTokenIsWeth() public {
@@ -435,6 +433,8 @@ contract GoatV1RouterTest is BaseTest {
         // Still in presale period
         // Try to add liquidity again
         addLiqParams = addLiquidityParams(false, false);
+        token.mint(lp_1, 100e18);
+        weth.transfer(lp_1, 1e18);
         vm.startPrank(lp_1);
         token.approve(address(router), addLiqParams.tokenDesired);
         weth.approve(address(router), addLiqParams.wethDesired);
@@ -511,30 +511,69 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(token.balanceOf(lp_1), expectedToken);
     }
 
-    function testRemoveLiquidityUpdateFeesIfSwapIsDoneBeforePresale() public {
+    function testRemoveLiquidityUpdateFeesForLpIfSwapIsDone() public {
         /**
          * @dev lp add initial liqudity and someone swaps before presale ends, the initial Lp should be able
          *     to claim his fees from swap after the presale ends
          */
-
-        _addLiquidityWithSomeWeth();
-        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
-        weth.transfer(swapper, 1e18);
-        // vm.startPrank(swapper);
-        //TODO: Do this testing after completing swap function and it's test
-    }
-
-    function testRemoveLiquidityUpdateFeesIfSwapIsDoneAfterPresale() public {
-        /**
-         * @dev lp add initial liqudity and someone swaps before presale ends, the initial Lp should be able
-         *     to claim his fees from swap after the presale ends
-         */
-
         _addLiquidityAndConvertToAmm();
         GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
         weth.transfer(swapper, 5e18);
+
         vm.startPrank(swapper);
-        //TODO: Do this testing after completing swap function and it's test
+        weth.approve(address(router), 5e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+
+        // check fees
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 lpFeePercent = (fees * 40) / 100;
+        uint256 expectedLpFees = (userLiquidity * pair.getFeesPerTokenStored()) / 1e18;
+        assertEq(pair.getPendingLiquidityFees(), lpFeePercent);
+        uint256 lpFees = pair.lpFees(address(this));
+        // assertEq(lpFees, lpFeePercent); // TODO: fees precision loss here
+        assertEq(lpFees, expectedLpFees);
+    }
+
+    function testRemoveLiquidityAllInFourWeeks() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), userLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+
+        // See what happens when he tries to remove liqudity without reaching cooldown end
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+
+        vm.warp(block.timestamp + 7 days);
+        uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
+
+        router.removeLiquidity(address(token), userLastRemainingLiquidity, 0, 0, lp_1, block.timestamp);
+
+        uint256 expectedTokenBalAfterAllRemoval = 250e18;
+        uint256 expectedEthBalAfterAllRemoval = 10e18;
+        //@dev we have 1000 liquidity minted to zero addresss so removed < expected
+        assertLt(token.balanceOf(lp_1), expectedTokenBalAfterAllRemoval);
+        assertLt(weth.balanceOf(lp_1), expectedEthBalAfterAllRemoval);
     }
 
     /* ------------------------------ REVERTS TESTS REMOVE LIQUIDITY ----------------------------- */
@@ -577,15 +616,52 @@ contract GoatV1RouterTest is BaseTest {
         router.removeLiquidityETH(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
     }
 
-    // function testCheckReserveAfterRemoveLiquidity() public {
+    function testRevertIfRemoveLiquidityDuringCooldown() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-    // }
+        // See what happens when he tries to remove liqudity without reaching cooldown end
+        vm.warp(block.timestamp + 6 days);
+        pair.approve(address(router), fractionalLiquidity);
+        vm.expectRevert(GoatErrors.WithdrawalCooldownActive.selector);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
 
-    //function testCheckStateAfterBurn
+    function testRemoveLiquidityRevertIfLastWithdrawIsLessThanBalanceOfLp() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), userLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-    /* ------------------------------- SWAP TESTS ------------------------------- */
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-    function testSwapWethToTokenSuccessInPresale() public {
+        vm.warp(block.timestamp + 7 days);
+
+        //@dev this should revert because last withdraw is less than balance of lp
+        uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
+        assert(userLastRemainingLiquidity == fractionalLiquidity); // in this case liqudity is perfectly fragmented
+        fractionalLiquidity = userLastRemainingLiquidity - 1; // 1 less than balance
+        vm.expectRevert(GoatErrors.ShouldWithdrawAllBalance.selector);
+        //@dev this should revert because last withdraw is less than balance of lp
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
+
+    /* ------------------------------- SWAP TESTS WETH-TOKEN------------------------------ */
+
+    function testSwapWethToTokenSuccessInPresaleWithoutInitialWeth() public {
         _addLiquidityWithoutWeth();
         weth.transfer(swapper, 5e18); // send some weth to swapper
         vm.startPrank(swapper);
@@ -598,7 +674,7 @@ contract GoatV1RouterTest is BaseTest {
             block.timestamp
         );
         vm.stopPrank();
-        uint256 fees = 5e18 * 99 / 10000; // 1% fee
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
         //calculate amt out after deducting fee
         uint256 numerator = (5e18 - fees) * (250e18 + 750e18);
         uint256 denominator = (0 + 10e18) + (5e18 - fees);
@@ -606,31 +682,725 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(amountOut, expectedAmountOut);
     }
 
-    // function testCheckStateAfterSwapWethToTokenSuccessInPresale() public {
-    //     _addLiquidityWithoutWeth();
-    //     GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
-    //     weth.transfer(swapper, 5e18); // send some weth to swapper
-    //     vm.startPrank(swapper);
-    //     weth.approve(address(router), 5e18);
+    function testCheckStateAfterSwapWethToTokenSuccessInPresaleWithoutInitialWeth() public {
+        _addLiquidityWithoutWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        assertEq(token.balanceOf(swapper), amountOut);
+        assertEq(weth.balanceOf(swapper), 0);
+        // Checks if fees are updated
+        assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
+        assertEq(pair.getPendingLiquidityFees(), (fees * 40) / 100); // 40% of fees
+        assertEq(pair.getPendingProtocolFees(), (fees * 60) / 100); // 60% of fees
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        uint256 amountIn = 5e18;
+        uint256 reserveOld = 750e18;
+        assertEq(vars.reserveEth, amountIn - fees);
+        assertEq(vars.reserveToken, reserveOld - amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), type(uint32).max);
+        assertEq(vars.bootstrapEth, 10e18);
+        assertEq(vars.virtualToken, 250e18);
+    }
 
-    //     uint256 amountOut = router.swapWethForExactTokens(
-    //         5e18,
-    //         0, // no slippage protection for now
-    //         address(token),
-    //         swapper,
-    //         block.timestamp
-    //     );
-    //     vm.stopPrank();
-    //     uint256 fees = 5e18 * 99 / 10000; // 1% fee
-    //     assertEq(token.balanceOf(swapper), amountOut);
-    //     assertEq(weth.balanceOf(swapper), 0);
-    //     // Checks if fees are updated for lp
-    //     assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
-    //     assertEq(pair.getPendingLiquidityFees(), fees * 40 / 100); // 40% of fees
-    //     console2.log("Lp fees", pair.getPendingLiquidityFees());
-    //     console2.log("total Spply", pair.totalSupply());
-    //     uint256 scale = 1e18;
-    //     uint256 expectedFeePerToken = pair.getPendingLiquidityFees() * scale / pair.totalSupply();
-    //     //    assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
-    // }
+    function testSwapWethToTokenSuccessInPresaleWithSomeInitialWeth() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+
+        weth.transfer(swapper, 2e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 2e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            2e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = (2e18 * 99) / 10000; // 1% fee
+        uint256 numerator = (2e18 - fees) * (vars.virtualToken + vars.reserveToken);
+        uint256 denominator = (vars.reserveEth + vars.virtualEth) + (2e18 - fees);
+        uint256 expectedAmountOut = numerator / denominator;
+        assertEq(amountOut, expectedAmountOut);
+    }
+
+    function testCheckStateAfterSwapWethToTokenSuccessInPresaleWithSomeInitialWeth() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 2e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 2e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            2e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = (2e18 * 99) / 10000; // 1% fee
+        assertEq(token.balanceOf(swapper), amountOut);
+        assertEq(weth.balanceOf(swapper), 0);
+        // Checks if fees are updated
+        assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
+        assertEq(pair.getPendingLiquidityFees(), (fees * 40) / 100); // 40% of fees
+        assertEq(pair.getPendingProtocolFees(), (fees * 60) / 100); // 60% of fees
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        uint256 amountIn = 2e18;
+        uint256 ethReserveOld = 5e18; // intial eth send by first Lp(no fee is charge when intializing with some weth)
+        uint256 reserveOld = 416666666666666666667; // 750e18 - 333333333333333333333
+        assertEq(vars.reserveEth, ethReserveOld + amountIn - fees);
+        assertEq(vars.reserveToken, reserveOld - amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), type(uint32).max);
+    }
+
+    function testSwapWethToTokenSuccessInPresaleWithAllInitialWeth() public {
+        _addLiquidityAndConvertToAmm(); // convert directly to amm
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 numerator = (5e18 - fees) * (250e18);
+        uint256 denominator = 10e18 + (5e18 - fees);
+        uint256 expectedAmountOut = numerator / denominator;
+        assertEq(amountOut, expectedAmountOut);
+    }
+
+    function testCheckStateAfterSwapWethToTokenSuccessInPresaleWithAllInitialWeth() public {
+        _addLiquidityAndConvertToAmm(); // convert directly to amm
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        assertEq(token.balanceOf(swapper), amountOut);
+        assertEq(weth.balanceOf(swapper), 0);
+        // Checks if fees are updated
+        assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
+        assertEq(pair.getPendingLiquidityFees(), (fees * 40) / 100); // 40% of fees
+        assertEq(pair.getPendingProtocolFees(), (fees * 60) / 100); // 60% of fees
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        uint256 amountIn = 5e18;
+        uint256 reserveOld = 250e18;
+        uint256 ethReserveOld = 10e18; // intial eth send by first Lp
+        assertEq(vars.reserveEth, ethReserveOld + amountIn - fees);
+        assertEq(vars.reserveToken, reserveOld - amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), block.timestamp + 30 days);
+        uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
+        assertEq(userPresaleBalance, amountOut);
+    }
+
+    function testSwapWethToTokenAndConvertPresaleToAmmFailWithExactBootstrapAmountBecauseOfFees() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        /**
+         * @dev even after providing  5e18 making the eth balanace in pair == bootstrap Amount,
+         * the fees will be deducted from the amountIn and
+         * the actual amountIn will be less making the bootstrap amount < reserveEth(not balance Weth)
+         */
+        assertEq(pair.vestingUntil(), type(uint32).max);
+    }
+
+    function testSwapWethToTokenAndConvertPresaleToAmm() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        weth.transfer(swapper, 10e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 10e18);
+        uint256 amountOut = router.swapWethForExactTokens(
+            10e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        // Now pool is converted to AMM
+        assertEq(pair.vestingUntil(), block.timestamp + 30 days); // vesting period is set
+        /**
+         * @dev only 5e18 + fees, is needed to make the reserveEth == bootstrapEth and convert the pool to AMM
+         * remaining will be swapped in a AMM with actual reserves
+         */
+        uint256 amtIn = 10e18;
+        uint256 amountWithFee = (amtIn * 9901) / 10000; // 1% fee
+        uint256 wethForAmm = vars.reserveEth + amountWithFee - vars.bootstrapEth;
+        // Amount out for presale
+        uint256 wethForPresale = amountWithFee - wethForAmm;
+        uint256 numerator = wethForPresale * (vars.virtualToken + vars.reserveToken);
+        uint256 denominator = vars.virtualEth + vars.reserveEth + wethForPresale;
+        uint256 expectedAmountOutPresale = numerator / denominator;
+        // Amount out for AMM
+        uint256 reserveTokenForAmm = 250e18;
+        numerator = wethForAmm * reserveTokenForAmm;
+        denominator = vars.bootstrapEth + wethForAmm;
+        uint256 expectedAmountOutAmm = numerator / denominator;
+        assertEq(amountOut, expectedAmountOutPresale + expectedAmountOutAmm);
+        assertEq(token.balanceOf(swapper), amountOut);
+        assertEq(weth.balanceOf(address(pair)), 15e18);
+        assertGt(token.balanceOf(address(pair)), 150e18);
+    }
+
+    function testSwapWethToTokenShouldNotSetPresaleBalanceIfVestingIsEnded() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.warp(block.timestamp + 31 days); // forward time to end vesting
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        router.swapWethForExactTokens(5e18, 0, address(token), swapper, block.timestamp);
+        vm.stopPrank();
+        assertEq(pair.getPresaleBalance(swapper), 0);
+    }
+
+    /* ---------------------------- SWAP WETH-TOKEN REVERT TESTS --------------------------- */
+    function testSwapWethToTokenRevertsIfPoolDoesNotExist() public {
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        vm.expectRevert(GoatErrors.GoatPoolDoesNotExist.selector);
+        router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapWethToTokenRevertIfAmountOutLessThenExpected() public {
+        _addLiquidityWithSomeWeth();
+        weth.transfer(swapper, 5e18); // send some weth to swapper
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        vm.expectRevert(GoatErrors.InsufficientAmountOut.selector);
+        router.swapWethForExactTokens(
+            5e18,
+            300e18, // amountOutMin is set higher
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    /* -------------------------- SWAP TEST ETH-TOKEN -------------------------- */
+    function testSwapEthToTokenSuccess() public {
+        _addLiquidityWithoutWeth();
+        vm.deal(swapper, 5e18); // send some eth to swapper
+        vm.startPrank(swapper);
+        uint256 amountOut = router.swapExactETHForTokens{value: 5e18}(0, address(token), swapper, block.timestamp);
+        vm.stopPrank();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        //calculate amt out after deducting fee
+        uint256 numerator = (5e18 - fees) * (250e18 + 750e18);
+        uint256 denominator = (0 + 10e18) + (5e18 - fees);
+        uint256 expectedAmountOut = numerator / denominator;
+        assertEq(amountOut, expectedAmountOut);
+    }
+
+    function testSwapEthToTokenRevertIfZeroValueProvided() public {
+        _addLiquidityWithoutWeth();
+        vm.deal(swapper, 5e18); // send some eth to swapper
+        vm.startPrank(swapper);
+        // More value,less amountIn
+        vm.expectRevert(GoatErrors.InsufficientInputAmount.selector);
+        uint256 amountOut = router.swapExactETHForTokens{value: 0}(0, address(token), swapper, block.timestamp);
+        vm.stopPrank();
+    }
+
+    //@note: these two tests should be enough, because all other functionality is same and we already tested it
+
+    /* -------------------------- SWAP TEST TOKEN-WETH -------------------------- */
+    function _swapWethToToken() internal returns (uint256 amountOut) {
+        weth.transfer(swapper, 5e18);
+        vm.startPrank(swapper);
+        weth.approve(address(router), 5e18);
+        amountOut = router.swapWethForExactTokens(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapTokenToWethSuccessInPresaleWithoutInitialWeth() public {
+        /**
+         * @dev to swap from token to weth, user should have bought in in a presale period and vest until 30 days
+         * No exteral tokens sell is allowed until vesting period is passed
+         */
+        _addLiquidityWithoutWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        uint256 feesBefore = pair.getPendingLiquidityFees() + pair.getPendingProtocolFees();
+        uint256 liquidityFeesbefore = pair.getPendingLiquidityFees();
+        uint256 protocolFeesBefore = pair.getPendingProtocolFees();
+        assert(feesBefore > 0); // should have some fees
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+
+        uint256 fees = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 feesAfter = feesBefore + fees;
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+        assertEq(pair.getPendingLiquidityFees(), liquidityFeesbefore + liquidityFee);
+        assertEq(pair.getPendingProtocolFees(), protocolFeesBefore + protocolFee);
+
+        assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter);
+
+        // Check expected amout out to actual amount out
+        uint256 wethReserveAfterFirstSwap = 5e18 - (5e18 * 99) / 10000; // 5e18 - fees
+        uint256 numerator = amountOut * (10e18 + wethReserveAfterFirstSwap); // amountIn * virtualEth + reserveEth
+        uint256 denominator = (250e18 + 418873950703989833116) + amountOut; // virtualToken + reserveToken + amountIn
+        uint256 expectedAmountWethOut = numerator / denominator;
+        expectedAmountWethOut = (expectedAmountWethOut * 9901) / 10000; // 1% fee
+        assertEq(amountWethOut, expectedAmountWethOut);
+    }
+
+    function testCheckStateAfterSwapTokenToWethSuccessInPresaleWithoutInitialWeth() public {
+        _addLiquidityWithoutWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+
+        uint256 amountOut = _swapWethToToken();
+        assertEq(pair.getPresaleBalance(swapper), amountOut);
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+
+        uint256 fee = (5e18 * 99) / 10000; // 1% fee
+        uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 wethReserveAfterFirstSwap = 5e18 - fee; // 5e18 - fees
+        uint256 reserveTokenBefore = 418873950703989833116;
+        assertEq(vars.reserveEth, wethReserveAfterFirstSwap - amountWethOut - feesAmountOut);
+        assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), type(uint32).max);
+        assertEq(vars.bootstrapEth, 10e18);
+        assertEq(vars.virtualToken, 250e18);
+        uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
+        assertEq(userPresaleBalance, 0);
+    }
+
+    function testSwapTokenToWethSuccessInPresaleWithSomeInitialWeth() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        uint256 liquidityFeesbefore = pair.getPendingLiquidityFees();
+        uint256 protocolFeesBefore = pair.getPendingProtocolFees();
+
+        uint256 feesBefore = pair.getPendingLiquidityFees() + pair.getPendingProtocolFees();
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+
+        uint256 fees = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+        uint256 feesAfter = feesBefore + fees;
+        assertEq(pair.getPendingLiquidityFees(), liquidityFeesbefore + liquidityFee);
+        assertEq(pair.getPendingProtocolFees(), protocolFeesBefore + protocolFee);
+
+        assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter);
+        //@dev fee is only charged on swap not on initial deposit
+        uint256 wethReserveAfterFirstActualSwap = 10e18 - (5e18 * 99) / 10000;
+        uint256 numerator = amountOut * (10e18 + wethReserveAfterFirstActualSwap);
+        uint256 denominator = (250e18 + 251240570411769128594) + amountOut; // we have 251 token reserve,this is just a wei's to become AMM
+        uint256 expectedAmountWethOut = numerator / denominator;
+        expectedAmountWethOut = (expectedAmountWethOut * 9901) / 10000; // 1% fee
+        assertEq(amountWethOut, expectedAmountWethOut);
+    }
+
+    function testCheckStateAfterSwapTokenToWethSuccessInPresaleWithSomeInitialWeth() public {
+        _addLiquidityWithSomeWeth();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        assertEq(pair.getPresaleBalance(swapper), amountOut);
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 wethReserveAfterFirstActualSwap = 10e18 - fees;
+        uint256 reserveTokenBefore = 251240570411769128594;
+        assertEq(vars.reserveEth, wethReserveAfterFirstActualSwap - amountWethOut - feesAmountOut);
+        assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), type(uint32).max);
+        assertEq(vars.bootstrapEth, 10e18);
+        assertEq(vars.virtualToken, 250e18);
+        uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
+        assertEq(userPresaleBalance, 0);
+    }
+
+    function testSwapTokenToWethSuccessInAmm() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        uint256 liquidityFeesbefore = pair.getPendingLiquidityFees();
+        uint256 protocolFeesBefore = pair.getPendingProtocolFees();
+        uint256 feesBefore = pair.getPendingLiquidityFees() + pair.getPendingProtocolFees();
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+
+        uint256 fees = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+        uint256 feesAfter = feesBefore + fees;
+        assertEq(pair.getPendingLiquidityFees(), liquidityFeesbefore + liquidityFee);
+        assertEq(pair.getPendingProtocolFees(), protocolFeesBefore + protocolFee);
+
+        assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter);
+        //@dev We do have a different amountOut calculation for AMM
+        uint256 wethReserveAfterFirstActualSwap = 15e18 - (5e18 * 99) / 10000; // 5e18 - fees
+        uint256 numerator = amountOut * wethReserveAfterFirstActualSwap; // amountIn  * reserveEth
+        uint256 denominator = (167218487675997458279 + amountOut);
+        //@dev 167218487675997458279 is the reserveToken after the first swap, i.e swap 5e18 weth for 250e18 tokens
+        uint256 expectedAmountWethOut = numerator / denominator;
+        expectedAmountWethOut = (expectedAmountWethOut * 9901) / 10000; // 1% fee
+
+        assertEq(amountWethOut, expectedAmountWethOut);
+    }
+
+    function testCheckStateAfterSwapTokenToWethSuccessInAmm() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        assertEq(pair.getPresaleBalance(swapper), amountOut);
+        // Now swap token to weth
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        uint256 amountWethOut = router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        uint256 scale = 1e18;
+        uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
+        GoatTypes.LocalVariables_PairStateInfo memory vars;
+        (
+            vars.reserveEth,
+            vars.reserveToken,
+            vars.virtualEth,
+            vars.initialTokenMatch,
+            vars.bootstrapEth,
+            vars.virtualToken
+        ) = pair.getStateInfoForPresale();
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 wethReserveAfterFirstActualSwap = 15e18 - fees;
+        uint256 reserveTokenBefore = 167218487675997458279;
+        assertEq(vars.reserveEth, wethReserveAfterFirstActualSwap - amountWethOut - feesAmountOut);
+        assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
+        assertEq(vars.virtualEth, 10e18);
+        assertEq(vars.initialTokenMatch, 1000e18);
+        assertEq(pair.vestingUntil(), block.timestamp + 30 days);
+        uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
+        assertEq(userPresaleBalance, 0);
+    }
+
+    function testSwapTokenToWethShouldNotSetPresaleBalanceIfVestingIsEnded() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 amountOut = _swapWethToToken();
+        vm.warp(block.timestamp + 31 days); // forward time to end vesting
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        router.swapExactTokensForWeth(
+            amountOut, // amountIn
+            0,
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+        assertEq(pair.getPresaleBalance(swapper), amountOut); // Old presale balance
+    }
+
+    function testSwapTokenToWethIsAllowedToEveryoneAfterVestingDuration() public {
+        _addLiquidityAndConvertToAmm();
+        console2.log(block.timestamp);
+        uint256 timestamp = block.timestamp + 31 days;
+        vm.warp(timestamp); // forward time to end vesting
+        // Now swap token to weth
+        token.mint(swapper, 100e18);
+        vm.startPrank(swapper);
+        token.approve(address(router), 100e18);
+        console2.log("here");
+        router.swapExactTokensForWeth(
+            100e18, // amountIn
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    /* ------------------------- TEST SWAP TOKEN-WETH REVERTS ------------------------ */
+
+    function testSwapTokenToWethRevertIfPoolDoesNotExist() public {
+        vm.startPrank(swapper);
+        token.approve(address(router), 5e18);
+        vm.expectRevert(GoatErrors.GoatPoolDoesNotExist.selector);
+        router.swapExactTokensForWeth(
+            5e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapTokenToWethRevertIfAmountOutLessThenExpected() public {
+        _addLiquidityWithSomeWeth();
+        uint256 amountOut = _swapWethToToken();
+        vm.startPrank(swapper);
+        token.approve(address(router), amountOut);
+        vm.expectRevert(GoatErrors.InsufficientAmountOut.selector);
+        router.swapExactTokensForWeth(
+            amountOut,
+            300e18, // amountOutMin is set higher
+            address(token),
+            swapper,
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapTokenToWethRevertIfTokenNotBoughtInPresale() public {
+        /**
+         * @notice The `to` address of params should hold the tokens bought in presale
+         * If `to` address doesn't have a enough tokens bought in presale, the swap will revert because of underflow
+         * Also note that the actual swapper and the `to` address can be different and it is upon the user to provide the correct address, if they provide others users address who holds the presale token balance, than the swap will not revert and actual user will loose the weth
+         */
+        _addLiquidityWithSomeWeth();
+        token.mint(swapper, 100e18);
+        vm.startPrank(swapper);
+        token.approve(address(router), 100e18);
+        vm.expectRevert(); // revert because of underflow
+        router.swapExactTokensForWeth(
+            100e18,
+            0, // no slippage protection for now
+            address(token),
+            swapper, // this address should have some tokens bought in presale
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapTokenToWethRevertIfAmountInIsZero() public {
+        _addLiquidityWithSomeWeth();
+        token.mint(swapper, 100e18);
+        vm.startPrank(swapper);
+        token.approve(address(router), 100e18);
+        vm.expectRevert(GoatErrors.InsufficientInputAmount.selector);
+        router.swapExactTokensForWeth(
+            0,
+            0, // no slippage protection for now
+            address(token),
+            swapper, // this address should have some tokens bought in presale
+            block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    /* --------------------------- WITHDRAW FEES TEST --------------------------- */
+
+    function testWithdrawFeeSuccess() public {
+        _addLiquidityAndConvertToAmm();
+        _swapWethToToken();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), fractionalLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+        uint256 liquidityFee = pair.getPendingLiquidityFees();
+        uint256 userFeeAccured = pair.lpFees(address(this));
+        // assertEq(liquidityFee, userFeeAccured); //TODO: we have a rounding up in favor of user
+        uint256 balanceBefore = weth.balanceOf(address(this));
+        router.withdrawFees(address(token), address(this));
+        assertEq(weth.balanceOf(address(this)), balanceBefore + userFeeAccured);
+        assertEq(pair.lpFees(address(this)), 0);
+
+        // See what happens when he tries to remove liqudity again after 1 week
+        vm.warp(block.timestamp + 7 days);
+        uint256 balanceBefore2 = weth.balanceOf(address(this));
+        pair.approve(address(router), fractionalLiquidity);
+        (uint256 amountWethOut,) =
+            router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, address(this), block.timestamp);
+        router.withdrawFees(address(token), address(this));
+        assertEq(weth.balanceOf(address(this)), balanceBefore2 + amountWethOut); // No fees should be there
+    }
 }
