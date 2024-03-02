@@ -17,6 +17,7 @@ contract GoatErrors {
     error InsufficientLiquidityBurned();
     error InsufficientLiquidityMinted();
     error InsufficientOutputAmount();
+    error InsufficientTakeoverTokenAmount();
     error InsufficientTokenAmount();
     error InsufficientVirtualEth();
     error InsufficientWethAmount();

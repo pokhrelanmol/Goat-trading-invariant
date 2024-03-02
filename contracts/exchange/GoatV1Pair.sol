@@ -96,7 +96,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
     }
 
-    function _handleFees(uint256 amountWethIn, uint256 amountWethOut) internal returns (uint256 feesCollected) {
+    function _handleFees(uint256 amountWethIn, uint256 amountWethOut, bool isPresale)
+        internal
+        returns (uint256 feesCollected, uint256 feesLp)
+    {
         // here either amountWethIn or amountWethOut will be zero
 
         // fees collected will be 100 bps of the weth amount
@@ -106,16 +109,18 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             feesCollected = (amountWethOut * 10000) / 9901 - amountWethOut;
         }
         // lp fess is fixed 40% of the fees collected of total 100 bps
-        uint256 feesLp = (feesCollected * 40) / 100;
+        feesLp = (feesCollected * 40) / 100;
 
         uint256 pendingProtocolFees = _pendingProtocolFees;
 
-        unchecked {
+        // lp fees only updated if it's not a presale
+        if (!isPresale) {
             _pendingLiquidityFees += uint112(feesLp);
-            pendingProtocolFees += feesCollected - feesLp;
             // update fees per token stored
             feesPerTokenStored += uint184((feesLp * 1e18) / totalSupply());
         }
+
+        pendingProtocolFees += feesCollected - feesLp;
 
         IGoatV1Factory _factory = IGoatV1Factory(factory);
         uint256 minCollectableFees = _factory.minimumCollectableFees();
@@ -203,17 +208,19 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             }
             mintVars.isFirstMint = true;
         } else {
+            // at this point in time we will get the actual reserves
             (uint256 reserveEth, uint256 reserveToken) = getReserves();
             amountWeth = balanceEth - reserveEth - _pendingLiquidityFees - _pendingProtocolFees;
             amountToken = balanceToken - reserveToken;
             liquidity = Math.min((amountWeth * totalSupply_) / reserveEth, (amountToken * totalSupply_) / reserveToken);
         }
 
+        // @note can this be an attack area to grief initial lp?
         if (mintVars.isFirstMint || to == _initialLPInfo.liquidityProvider) {
             _updateInitialLpInfo(liquidity, balanceEth, to, false, false);
         }
+        if (!mintVars.isFirstMint) _updateFeeRewards(to);
 
-        _updateFeeRewards(to);
         if (totalSupply_ == 0) {
             _mint(address(0), MINIMUM_LIQUIDITY);
         }
@@ -348,10 +355,13 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             // optimistically send weth out
             IERC20(_weth).safeTransfer(to, amountWethOut);
         }
-        swapVars.feesCollected = _handleFees(swapVars.amountWethIn, amountWethOut);
+        swapVars.vestingUntil = _vestingUntil;
+        swapVars.isPresale = swapVars.vestingUntil == _MAX_UINT32;
+
+        (swapVars.feesCollected, swapVars.lpFeesCollected) =
+            _handleFees(swapVars.amountWethIn, amountWethOut, swapVars.isPresale);
 
         swapVars.tokenAmount = swapVars.isBuy ? amountTokenOut : swapVars.amountTokenIn;
-        swapVars.vestingUntil = _vestingUntil;
 
         // We store details of participants so that we only allow users who have
         // swap back tokens who have bought in the vesting period.
@@ -374,7 +384,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             : swapVars.initialReserveToken + swapVars.amountTokenIn;
 
         swapVars.bootstrapEth = _bootstrapEth;
-        if (swapVars.vestingUntil == _MAX_UINT32 && swapVars.finalReserveEth >= swapVars.bootstrapEth) {
+        if (swapVars.isPresale && swapVars.finalReserveEth >= swapVars.bootstrapEth) {
             // at this point pool should be changed to an AMM
             _checkAndConvertPool(swapVars.finalReserveEth, swapVars.finalReserveToken);
         } else {
@@ -392,6 +402,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             ) {
                 revert GoatErrors.KInvariant();
             }
+        }
+        // presale lp fees should go to reserve eth
+        if (swapVars.isPresale) {
+            swapVars.finalReserveEth += swapVars.lpFeesCollected;
         }
         _update(swapVars.finalReserveEth, swapVars.finalReserveToken, true);
     }
@@ -471,45 +485,75 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // teams can use this function to take over the pool by adding
     // at least 10% more tokens and weth added by the initial LP.
     // This function can be used to bypass griefing by the malicious users
-    function takeOverPool(address to) external {
+    function takeOverPool(uint256 tokenAmount, uint256 wethAmount, GoatTypes.InitParams memory initParams) external {
         if (_vestingUntil != _MAX_UINT32) {
             revert GoatErrors.ActionNotAllowed();
         }
-        uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
-        uint256 wethBalance = IERC20(_weth).balanceOf(address(this));
-        uint256 tokenAmount = tokenBalance - _reserveToken;
-        // @note is there a need to add 10% extra weth as well?
-        uint256 wethAmount = wethBalance - _reserveEth;
+
         GoatTypes.InitialLPInfo memory initialLpInfo = _initialLPInfo;
 
-        //
-        (uint256 tokenAmountForPresale, uint256 tokenAmountForAmm) = _tokenAmountsForLiquidityBootstrap(
-            _virtualEth, _bootstrapEth, initialLpInfo.initialWethAdded, _initialTokenMatch
-        );
-
-        // @note should I check against 10% wethAmount?
-        if (wethAmount != initialLpInfo.initialWethAdded) {
+        if (wethAmount < initialLpInfo.initialWethAdded) {
             revert GoatErrors.InsufficientWethAmount();
         }
 
+        GoatTypes.LocalVariables_TakeOverPool memory localVars;
+        address to = msg.sender;
+        localVars.virtualEthOld = _virtualEth;
+        localVars.bootstrapEthOld = _bootstrapEth;
+        localVars.initialTokenMatchOld = _initialTokenMatch;
+        // @note is there a need to check old init params and new init params?
+        (localVars.tokenAmountForPresaleOld, localVars.tokenAmountForAmmOld) = _tokenAmountsForLiquidityBootstrap(
+            localVars.virtualEthOld,
+            localVars.bootstrapEthOld,
+            initialLpInfo.initialWethAdded,
+            localVars.initialTokenMatchOld
+        );
+
         // team needs to add min 10% more tokens than the initial lp to take over
-        uint256 minTokenNeeded = ((tokenAmountForPresale + tokenAmountForAmm) * 11000) / 10000;
-        if (tokenAmount < minTokenNeeded) {
-            revert GoatErrors.InsufficientTokenAmount();
+        localVars.minTokenNeeded =
+            ((localVars.tokenAmountForPresaleOld + localVars.tokenAmountForAmmOld) * 11000) / 10000;
+        if (tokenAmount < localVars.minTokenNeeded) {
+            revert GoatErrors.InsufficientTakeoverTokenAmount();
+        }
+
+        // new token amount for presale if initParams are changed
+        (localVars.tokenAmountForPresaleNew, localVars.tokenAmountForAmmNew) = _tokenAmountsForLiquidityBootstrap(
+            initParams.virtualEth, initParams.bootstrapEth, wethAmount, initParams.initialTokenMatch
+        );
+
+        if (tokenAmount != (localVars.tokenAmountForPresaleNew + localVars.tokenAmountForAmmNew)) {
+            revert GoatErrors.IncorrectTokenAmount();
         }
 
         //
         uint256 lpBalance = balanceOf(initialLpInfo.liquidityProvider);
+        // @note even though future mints are calculated using totalSupply
+        // is there a need to mint different amount of liquidity tokens
+        // to the one who is taking over for homogenity? because init params
+        // is gonna get updated here
         _transfer(initialLpInfo.liquidityProvider, to, lpBalance, true);
         _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
 
         // transfer excess token to the initial liquidity provider
-        IERC20(_token).safeTransfer(to, (tokenAmountForPresale + tokenAmountForAmm));
+        IERC20(_token).safeTransfer(to, (localVars.tokenAmountForAmmOld + localVars.tokenAmountForPresaleOld));
         if (initialLpInfo.initialWethAdded != 0) {
             IERC20(_weth).safeTransfer(to, initialLpInfo.initialWethAdded);
         }
+        // update init vars
+        if (initParams.virtualEth != localVars.virtualEthOld) {
+            _virtualEth = uint112(initParams.virtualEth);
+        }
+        if (initParams.bootstrapEth != localVars.bootstrapEthOld) {
+            _bootstrapEth = uint112(initParams.bootstrapEth);
+        }
+        if (initParams.initialTokenMatch != localVars.initialTokenMatchOld) {
+            _initialTokenMatch = initParams.initialTokenMatch;
+        }
+
+        initialLpInfo.liquidityProvider = to;
+
         // final balance check
-        tokenBalance = IERC20(_token).balanceOf(address(this));
+        uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
         // update reserves
         _update(_reserveEth, tokenBalance, false);
     }
@@ -524,8 +568,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         uint256 liquidityToBurn = initialLPBalance - liquidity;
 
         _updateInitialLpInfo(liquidity, 0, initialLiquidityProvider, false, true);
-        // @note can I read balanceOf just once? :thinking_face
-        _updateFeeRewards(initialLiquidityProvider);
         _burn(initialLiquidityProvider, liquidityToBurn);
         _vestingUntil = uint32(block.timestamp + VESTING_PERIOD);
     }

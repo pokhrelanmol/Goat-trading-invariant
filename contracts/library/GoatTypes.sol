@@ -78,6 +78,7 @@ contract GoatTypes {
 
     struct LocalVariables_Swap {
         bool isBuy;
+        bool isPresale;
         uint256 initialReserveEth;
         uint256 initialReserveToken;
         uint256 finalReserveEth;
@@ -85,6 +86,7 @@ contract GoatTypes {
         uint256 amountWethIn;
         uint256 amountTokenIn;
         uint256 feesCollected;
+        uint256 lpFeesCollected;
         uint256 tokenAmount;
         uint32 vestingUntil;
         uint256 bootstrapEth;
@@ -113,5 +115,16 @@ contract GoatTypes {
         uint256 amountTokenOutAmm;
         uint256 wethForAmm;
         uint256 wethForPresale;
+    }
+
+    struct LocalVariables_TakeOverPool {
+        uint256 minTokenNeeded;
+        uint256 tokenAmountForPresaleOld;
+        uint256 tokenAmountForAmmOld;
+        uint256 tokenAmountForPresaleNew;
+        uint256 tokenAmountForAmmNew;
+        uint256 virtualEthOld;
+        uint256 initialTokenMatchOld;
+        uint256 bootstrapEthOld;
     }
 }

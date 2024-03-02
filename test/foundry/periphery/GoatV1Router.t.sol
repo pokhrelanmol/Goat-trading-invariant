@@ -540,11 +540,11 @@ contract GoatV1RouterTest is BaseTest {
 
         // check fees
         uint256 fees = (5e18 * 99) / 10000; // 1% fee
-        uint256 lpFeePercent = (fees * 40) / 100;
+        uint256 totalLpFees = (fees * 40) / 100;
         uint256 expectedLpFees = (userLiquidity * pair.getFeesPerTokenStored()) / 1e18;
-        assertEq(pair.getPendingLiquidityFees(), lpFeePercent);
+        assertEq(pair.getPendingLiquidityFees(), totalLpFees);
         uint256 lpFees = pair.lpFees(address(this));
-        // assertEq(lpFees, lpFeePercent); // TODO: fees precision loss here
+        assertEq(lpFees, totalLpFees); // TODO: fees precision loss here
         assertEq(lpFees, expectedLpFees);
     }
 
