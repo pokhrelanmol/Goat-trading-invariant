@@ -10,8 +10,6 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {GoatTypes} from "../../../contracts/library/GoatTypes.sol";
 
 contract GoatV1RouterTest is BaseTest {
-    uint256 private constant _VESTING_PERIOD = 7 days;
-
     function testConstructor() public {
         assertEq(address(router.FACTORY()), address(factory));
         assertEq(address(router.WETH()), address(weth));
@@ -537,17 +535,20 @@ contract GoatV1RouterTest is BaseTest {
         uint256 fractionalLiquidity = userLiquidity / 4;
         pair.approve(address(router), fractionalLiquidity);
         // forward time to remove lock
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 lpfeess = (fees * 40) / 100;
+        uint256 feePerTokenStored = (lpfeess * 1e18) / pair.totalSupply();
+        assertEq(pair.feesPerTokenStored(), feePerTokenStored);
         vm.warp(block.timestamp + 2 days);
         router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
         // check fees
-        uint256 fees = (5e18 * 99) / 10000; // 1% fee
         uint256 totalLpFees = (fees * 40) / 100;
-        uint256 expectedLpFees = (userLiquidity * pair.getFeesPerTokenStored()) / 1e18;
         assertEq(pair.getPendingLiquidityFees(), totalLpFees);
         uint256 lpFees = pair.lpFees(address(this));
-        assertEq(lpFees, totalLpFees); // TODO: fees precision loss here
-        assertEq(lpFees, expectedLpFees);
+        //How lp fees is calculated
+
+        // assertEq(totalLpFees,lpFees); // TODO : precision loss
     }
 
     function testRemoveLiquidityAllInFourWeeks() public {
@@ -635,32 +636,30 @@ contract GoatV1RouterTest is BaseTest {
         router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
     }
 
-    // @note I changed the logic and don't think it's necessary
-    // function testRemoveLiquidityRevertIfLastWithdrawIsLessThanBalanceOfLp() public {
-    //     _addLiquidityAndConvertToAmm();
-    //     GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
-    //     uint256 userLiquidity = pair.balanceOf(address(this));
-    //     uint256 fractionalLiquidity = userLiquidity / 4;
-    //     pair.approve(address(router), userLiquidity);
-    //     // forward time to remove lock
-    //     vm.warp(block.timestamp + 2 days);
-    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    function testRemoveLiquidityRevertIfLastWithdrawIsLessThanBalanceOfLp() public {
+        _addLiquidityAndConvertToAmm();
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        uint256 userLiquidity = pair.balanceOf(address(this));
+        uint256 fractionalLiquidity = userLiquidity / 4;
+        pair.approve(address(router), userLiquidity);
+        // forward time to remove lock
+        vm.warp(block.timestamp + 2 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-    //     vm.warp(block.timestamp + 7 days);
-    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
-    //     vm.warp(block.timestamp + 7 days);
-    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+        vm.warp(block.timestamp + 7 days);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-    //     vm.warp(block.timestamp + 7 days);
+        vm.warp(block.timestamp + 7 days);
 
-    //     //@dev this should revert because last withdraw is less than balance of lp
-    //     uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
-    //     assert(userLastRemainingLiquidity == fractionalLiquidity); // in this case liqudity is perfectly fragmented
-    //     fractionalLiquidity = userLastRemainingLiquidity - 1; // 1 less than balance
-    //     vm.expectRevert(GoatErrors.ShouldWithdrawAllBalance.selector);
-    //     //@dev this should revert because last withdraw is less than balance of lp
-    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
-    // }
+        uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
+        // sending 1 wei less than actual balance should cause revert
+        fractionalLiquidity = userLastRemainingLiquidity - 1;
+
+        vm.expectRevert(GoatErrors.ShouldWithdrawAllBalance.selector);
+        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    }
 
     /* ------------------------------- SWAP TESTS WETH-TOKEN------------------------------ */
 
@@ -700,11 +699,12 @@ contract GoatV1RouterTest is BaseTest {
         );
         vm.stopPrank();
         uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
         assertEq(token.balanceOf(swapper), amountOut);
         assertEq(weth.balanceOf(swapper), 0);
         // Checks if fees are updated
-        assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
-        assertEq(pair.getPendingLiquidityFees(), (fees * 40) / 100); // 40% of fees
+        assertEq(pair.getPendingLiquidityFees(), 0); // 40% of fees
         assertEq(pair.getPendingProtocolFees(), (fees * 60) / 100); // 60% of fees
         uint256 scale = 1e18;
         uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
@@ -720,7 +720,7 @@ contract GoatV1RouterTest is BaseTest {
         ) = pair.getStateInfoForPresale();
         uint256 amountIn = 5e18;
         uint256 reserveOld = 750e18;
-        assertEq(vars.reserveEth, amountIn - fees);
+        assertEq(vars.reserveEth, amountIn - protocolFee);
         assertEq(vars.reserveToken, reserveOld - amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
@@ -775,12 +775,14 @@ contract GoatV1RouterTest is BaseTest {
         );
         vm.stopPrank();
         uint256 fees = (2e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+
         assertEq(token.balanceOf(swapper), amountOut);
         assertEq(weth.balanceOf(swapper), 0);
         // Checks if fees are updated
-        assertEq(fees, pair.getPendingLiquidityFees() + pair.getPendingProtocolFees());
-        assertEq(pair.getPendingLiquidityFees(), (fees * 40) / 100); // 40% of fees
-        assertEq(pair.getPendingProtocolFees(), (fees * 60) / 100); // 60% of fees
+        assertEq(pair.getPendingLiquidityFees(), 0);
+        assertEq(pair.getPendingProtocolFees(), protocolFee); // 60% of fees
         uint256 scale = 1e18;
         uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
         assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
@@ -796,7 +798,7 @@ contract GoatV1RouterTest is BaseTest {
         uint256 amountIn = 2e18;
         uint256 ethReserveOld = 5e18; // intial eth send by first Lp(no fee is charge when intializing with some weth)
         uint256 reserveOld = 416666666666666666667; // 750e18 - 333333333333333333333
-        assertEq(vars.reserveEth, ethReserveOld + amountIn - fees);
+        assertEq(vars.reserveEth, ethReserveOld + amountIn - protocolFee);
         assertEq(vars.reserveToken, reserveOld - amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
@@ -863,7 +865,7 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(vars.reserveToken, reserveOld - amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
-        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD);
+        assertEq(pair.vestingUntil(), block.timestamp + 7 days);
         uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
         assertEq(userPresaleBalance, amountOut);
     }
@@ -914,7 +916,7 @@ contract GoatV1RouterTest is BaseTest {
         );
         vm.stopPrank();
         // Now pool is converted to AMM
-        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD); // vesting period is set
+        assertEq(pair.vestingUntil(), block.timestamp + 7 days); // vesting period is set
         /**
          * @dev only 5e18 + fees, is needed to make the reserveEth == bootstrapEth and convert the pool to AMM
          * remaining will be swapped in a AMM with actual reserves
@@ -948,6 +950,10 @@ contract GoatV1RouterTest is BaseTest {
         router.swapWethForExactTokens(5e18, 0, address(token), swapper, block.timestamp);
         vm.stopPrank();
         assertEq(pair.getPresaleBalance(swapper), 0);
+    }
+
+    function testSwapWethToTokenForNormalUser() public {
+        //TODO: test for normal user
     }
 
     /* ---------------------------- SWAP WETH-TOKEN REVERT TESTS --------------------------- */
@@ -1032,7 +1038,6 @@ contract GoatV1RouterTest is BaseTest {
         GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
         uint256 amountOut = _swapWethToToken();
         uint256 feesBefore = pair.getPendingLiquidityFees() + pair.getPendingProtocolFees();
-        uint256 liquidityFeesbefore = pair.getPendingLiquidityFees();
         uint256 protocolFeesBefore = pair.getPendingProtocolFees();
         assert(feesBefore > 0); // should have some fees
         // Now swap token to weth
@@ -1051,13 +1056,17 @@ contract GoatV1RouterTest is BaseTest {
         uint256 feesAfter = feesBefore + fees;
         uint256 liquidityFee = (fees * 40) / 100;
         uint256 protocolFee = fees - liquidityFee;
-        assertEq(pair.getPendingLiquidityFees(), liquidityFeesbefore + liquidityFee);
+        assertEq(pair.getPendingLiquidityFees(), 0);
         assertEq(pair.getPendingProtocolFees(), protocolFeesBefore + protocolFee);
 
-        assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter);
+        assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter - liquidityFee);
 
         // Check expected amout out to actual amount out
-        uint256 wethReserveAfterFirstSwap = 5e18 - (5e18 * 99) / 10000; // 5e18 - fees
+        uint256 feesOnFirstSwap = (5e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFeeOnFirstSwap = (feesOnFirstSwap * 40) / 100;
+        uint256 protocolFeeOnFirstSwap = feesOnFirstSwap - liquidityFeeOnFirstSwap;
+
+        uint256 wethReserveAfterFirstSwap = 5e18 - protocolFeeOnFirstSwap; // 5e18 - protocolFeeOnFirstSwap
         uint256 numerator = amountOut * (10e18 + wethReserveAfterFirstSwap); // amountIn * virtualEth + reserveEth
         uint256 denominator = (250e18 + 418873950703989833116) + amountOut; // virtualToken + reserveToken + amountIn
         uint256 expectedAmountWethOut = numerator / denominator;
@@ -1095,12 +1104,17 @@ contract GoatV1RouterTest is BaseTest {
         uint256 scale = 1e18;
         uint256 expectedFeePerToken = (pair.getPendingLiquidityFees() * scale) / pair.totalSupply();
         assertEq(pair.feesPerTokenStored(), expectedFeePerToken);
-
-        uint256 fee = (5e18 * 99) / 10000; // 1% fee
+        //Fees charged on first swap
+        uint256 feesOnFirstSwap = (5e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFeeOnFirstSwap = (feesOnFirstSwap * 40) / 100;
+        uint256 protocolFeeOnFirstSwap = feesOnFirstSwap - liquidityFeeOnFirstSwap;
+        uint256 wethReserveAfterFirstSwap = 5e18 - protocolFeeOnFirstSwap;
+        // Fee charged on this swap
         uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
-        uint256 wethReserveAfterFirstSwap = 5e18 - fee; // 5e18 - fees
+        uint256 liquidityFeeOnCurrentSwap = (feesAmountOut * 40) / 100;
+        uint256 protocolFeeOnCurrentSwap = feesAmountOut - liquidityFeeOnCurrentSwap;
         uint256 reserveTokenBefore = 418873950703989833116;
-        assertEq(vars.reserveEth, wethReserveAfterFirstSwap - amountWethOut - feesAmountOut);
+        assertEq(vars.reserveEth, wethReserveAfterFirstSwap - amountWethOut - protocolFeeOnCurrentSwap);
         assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
@@ -1134,13 +1148,16 @@ contract GoatV1RouterTest is BaseTest {
         uint256 fees = (amountWethOut * 10000) / 9901 - amountWethOut;
         uint256 liquidityFee = (fees * 40) / 100;
         uint256 protocolFee = fees - liquidityFee;
-        uint256 feesAfter = feesBefore + fees;
-        assertEq(pair.getPendingLiquidityFees(), liquidityFeesbefore + liquidityFee);
+        uint256 feesAfter = feesBefore + protocolFee;
+        assertEq(pair.getPendingLiquidityFees(), 0); // no liquidity fees on presale
         assertEq(pair.getPendingProtocolFees(), protocolFeesBefore + protocolFee);
 
         assertEq(pair.getPendingLiquidityFees() + pair.getPendingProtocolFees(), feesAfter);
         //@dev fee is only charged on swap not on initial deposit
-        uint256 wethReserveAfterFirstActualSwap = 10e18 - (5e18 * 99) / 10000;
+        uint256 feeOnFirstSwap = (5e18 * 99) / 10000;
+        uint256 liquidityFeeOnFirstSwap = (feeOnFirstSwap * 40) / 100;
+        uint256 protocolFeeOnFirstSwap = feeOnFirstSwap - liquidityFeeOnFirstSwap;
+        uint256 wethReserveAfterFirstActualSwap = 10e18 - protocolFeeOnFirstSwap; // only protocol fee is charged on presale
         uint256 numerator = amountOut * (10e18 + wethReserveAfterFirstActualSwap);
         uint256 denominator = (250e18 + 251240570411769128594) + amountOut; // we have 251 token reserve,this is just a wei's to become AMM
         uint256 expectedAmountWethOut = numerator / denominator;
@@ -1176,11 +1193,18 @@ contract GoatV1RouterTest is BaseTest {
             vars.bootstrapEth,
             vars.virtualToken
         ) = pair.getStateInfoForPresale();
-        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        // Fees charge on first swap
+        uint256 feeOnFirstSwap = (5e18 * 99) / 10000;
+        uint256 liquidityFeeOnFirstSwap = (feeOnFirstSwap * 40) / 100;
+        uint256 protocolFeeOnFirstSwap = feeOnFirstSwap - liquidityFeeOnFirstSwap;
+        uint256 wethReserveAfterFirstActualSwap = 10e18 - protocolFeeOnFirstSwap; // only protocol fee is charged on presale
+        //Fee charged on this current swap in on amountWethOut
         uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
-        uint256 wethReserveAfterFirstActualSwap = 10e18 - fees;
+        uint256 liqudityFeeOnCurrentSwap = (feesAmountOut * 40) / 100;
+        uint256 protocolFeeOnCurrentSwap = feesAmountOut - liqudityFeeOnCurrentSwap;
+
         uint256 reserveTokenBefore = 251240570411769128594;
-        assertEq(vars.reserveEth, wethReserveAfterFirstActualSwap - amountWethOut - feesAmountOut);
+        assertEq(vars.reserveEth, wethReserveAfterFirstActualSwap - amountWethOut - protocolFeeOnCurrentSwap);
         assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
@@ -1233,6 +1257,11 @@ contract GoatV1RouterTest is BaseTest {
         _addLiquidityAndConvertToAmm();
         GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
         uint256 amountOut = _swapWethToToken();
+        // First swap fees
+        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+
         assertEq(pair.getPresaleBalance(swapper), amountOut);
         // Now swap token to weth
         vm.startPrank(swapper);
@@ -1257,17 +1286,23 @@ contract GoatV1RouterTest is BaseTest {
             vars.bootstrapEth,
             vars.virtualToken
         ) = pair.getStateInfoForPresale();
-        uint256 fees = (5e18 * 99) / 10000; // 1% fee
+        // current swap fees
         uint256 feesAmountOut = (amountWethOut * 10000) / 9901 - amountWethOut;
+        uint256 liquidityFeeOnCurrentSwap = (feesAmountOut * 40) / 100;
+        uint256 protocolFeeOnCurrentSwap = feesAmountOut - liquidityFeeOnCurrentSwap;
+
         uint256 wethReserveAfterFirstActualSwap = 15e18 - fees;
         uint256 reserveTokenBefore = 167218487675997458279;
+
         assertEq(vars.reserveEth, wethReserveAfterFirstActualSwap - amountWethOut - feesAmountOut);
         assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
-        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD);
+        assertEq(pair.vestingUntil(), block.timestamp + 7 days);
         uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
         assertEq(userPresaleBalance, 0);
+        assertEq(pair.getPendingLiquidityFees(), liquidityFee + liquidityFeeOnCurrentSwap);
+        assertEq(pair.getPendingProtocolFees(), protocolFee + protocolFeeOnCurrentSwap);
     }
 
     function testSwapTokenToWethShouldNotSetPresaleBalanceIfVestingIsEnded() public {

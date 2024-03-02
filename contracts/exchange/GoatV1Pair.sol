@@ -492,6 +492,14 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (tokenAmount != (localVars.tokenAmountForPresaleNew + localVars.tokenAmountForAmmNew)) {
             revert GoatErrors.IncorrectTokenAmount();
         }
+        if (wethAmount != initialLpInfo.initialWethAdded) {
+            revert GoatErrors.IncorrectWethAmount();
+        }
+
+        IERC20(_token).safeTransferFrom(to, address(this), tokenAmount);
+        if (wethAmount != 0) {
+            IERC20(_weth).safeTransferFrom(to, address(this), wethAmount);
+        }
 
         //
         uint256 lpBalance = balanceOf(initialLpInfo.liquidityProvider);
@@ -519,7 +527,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _bootstrapEth = uint112(initParams.bootstrapEth);
         _initialTokenMatch = initParams.initialTokenMatch;
 
-        // final balance check
+        // final balance check is this necessary?
         uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
         // update reserves
         _update(_reserveEth, tokenBalance, false);
@@ -633,8 +641,15 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             // because last withdraw should be allowed to remove the dust amount
             // as well that's not in the fractional balance that's caused due
             // to division by 4
-            if (lpInfo.withdrawalLeft != 1 && (amount > lpInfo.fractionalBalance)) {
-                revert GoatErrors.BurnLimitExceeded();
+            if (lpInfo.withdrawalLeft == 1) {
+                uint256 remainingLpBalance = balanceOf(lpInfo.liquidityProvider);
+                if (amount != remainingLpBalance) {
+                    revert GoatErrors.ShouldWithdrawAllBalance();
+                }
+            } else {
+                if (amount > lpInfo.fractionalBalance) {
+                    revert GoatErrors.BurnLimitExceeded();
+                }
             }
         }
 

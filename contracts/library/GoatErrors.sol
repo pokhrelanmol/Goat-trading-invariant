@@ -11,6 +11,7 @@ contract GoatErrors {
     error GoatPoolDoesNotExist();
     error GoatV1Forbidden();
     error IncorrectTokenAmount();
+    error IncorrectWethAmount();
     error InsufficientAmountOut();
     error InsufficientInputAmount();
     error InsufficientLiquidity();
