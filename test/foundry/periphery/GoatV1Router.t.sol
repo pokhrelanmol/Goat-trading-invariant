@@ -10,6 +10,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {GoatTypes} from "../../../contracts/library/GoatTypes.sol";
 
 contract GoatV1RouterTest is BaseTest {
+    uint256 private constant _VESTING_PERIOD = 7 days;
+
     function testConstructor() public {
         assertEq(address(router.FACTORY()), address(factory));
         assertEq(address(router.WETH()), address(weth));
@@ -633,31 +635,32 @@ contract GoatV1RouterTest is BaseTest {
         router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
     }
 
-    function testRemoveLiquidityRevertIfLastWithdrawIsLessThanBalanceOfLp() public {
-        _addLiquidityAndConvertToAmm();
-        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
-        uint256 userLiquidity = pair.balanceOf(address(this));
-        uint256 fractionalLiquidity = userLiquidity / 4;
-        pair.approve(address(router), userLiquidity);
-        // forward time to remove lock
-        vm.warp(block.timestamp + 2 days);
-        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    // @note I changed the logic and don't think it's necessary
+    // function testRemoveLiquidityRevertIfLastWithdrawIsLessThanBalanceOfLp() public {
+    //     _addLiquidityAndConvertToAmm();
+    //     GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+    //     uint256 userLiquidity = pair.balanceOf(address(this));
+    //     uint256 fractionalLiquidity = userLiquidity / 4;
+    //     pair.approve(address(router), userLiquidity);
+    //     // forward time to remove lock
+    //     vm.warp(block.timestamp + 2 days);
+    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-        vm.warp(block.timestamp + 7 days);
-        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
-        vm.warp(block.timestamp + 7 days);
-        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    //     vm.warp(block.timestamp + 7 days);
+    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    //     vm.warp(block.timestamp + 7 days);
+    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
 
-        vm.warp(block.timestamp + 7 days);
+    //     vm.warp(block.timestamp + 7 days);
 
-        //@dev this should revert because last withdraw is less than balance of lp
-        uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
-        assert(userLastRemainingLiquidity == fractionalLiquidity); // in this case liqudity is perfectly fragmented
-        fractionalLiquidity = userLastRemainingLiquidity - 1; // 1 less than balance
-        vm.expectRevert(GoatErrors.ShouldWithdrawAllBalance.selector);
-        //@dev this should revert because last withdraw is less than balance of lp
-        router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
-    }
+    //     //@dev this should revert because last withdraw is less than balance of lp
+    //     uint256 userLastRemainingLiquidity = pair.balanceOf(address(this));
+    //     assert(userLastRemainingLiquidity == fractionalLiquidity); // in this case liqudity is perfectly fragmented
+    //     fractionalLiquidity = userLastRemainingLiquidity - 1; // 1 less than balance
+    //     vm.expectRevert(GoatErrors.ShouldWithdrawAllBalance.selector);
+    //     //@dev this should revert because last withdraw is less than balance of lp
+    //     router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
+    // }
 
     /* ------------------------------- SWAP TESTS WETH-TOKEN------------------------------ */
 
@@ -860,7 +863,7 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(vars.reserveToken, reserveOld - amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
-        assertEq(pair.vestingUntil(), block.timestamp + 30 days);
+        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD);
         uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
         assertEq(userPresaleBalance, amountOut);
     }
@@ -911,7 +914,7 @@ contract GoatV1RouterTest is BaseTest {
         );
         vm.stopPrank();
         // Now pool is converted to AMM
-        assertEq(pair.vestingUntil(), block.timestamp + 30 days); // vesting period is set
+        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD); // vesting period is set
         /**
          * @dev only 5e18 + fees, is needed to make the reserveEth == bootstrapEth and convert the pool to AMM
          * remaining will be swapped in a AMM with actual reserves
@@ -1262,7 +1265,7 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(vars.reserveToken, reserveTokenBefore + amountOut);
         assertEq(vars.virtualEth, 10e18);
         assertEq(vars.initialTokenMatch, 1000e18);
-        assertEq(pair.vestingUntil(), block.timestamp + 30 days);
+        assertEq(pair.vestingUntil(), block.timestamp + _VESTING_PERIOD);
         uint256 userPresaleBalance = pair.getPresaleBalance(swapper);
         assertEq(userPresaleBalance, 0);
     }

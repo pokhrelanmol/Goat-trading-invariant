@@ -26,6 +26,7 @@ struct Users {
 contract GoatExchangeTest is Test {
     uint256 public constant MINIMUM_LIQUIDITY = 10 ** 3;
     uint32 private constant _MAX_UINT32 = type(uint32).max;
+    uint32 private constant _VESTING_PERIOD = 7 days;
     GoatV1Factory factory;
     GoatV1Pair pair;
     MockERC20 goat;
@@ -170,7 +171,7 @@ contract GoatExchangeTest is Test {
         assertEq(reserveToken, tokenAmtForAmm);
 
         uint256 vestingUntil = pair.vestingUntil();
-        assertEq(vestingUntil, block.timestamp + 30 days);
+        assertEq(vestingUntil, block.timestamp + _VESTING_PERIOD);
     }
 
     function testMintSuccessWithPartialBootstrapEth() public {

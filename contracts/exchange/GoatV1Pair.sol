@@ -24,7 +24,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
     uint256 public constant MINIMUM_LIQUIDITY = 10 ** 3;
     uint32 private constant _MIN_LOCK_PERIOD = 2 days;
-    uint32 public constant VESTING_PERIOD = 30 days;
+    uint32 public constant VESTING_PERIOD = 7 days;
     uint32 private constant _MAX_UINT32 = type(uint32).max;
     uint32 private constant _THIRTY_DAYS = 30 days;
 
@@ -452,6 +452,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // teams can use this function to take over the pool by adding
     // at least 10% more tokens and weth added by the initial LP.
     // This function can be used to bypass griefing by the malicious users
+    // weth amount passed here should exactly match the initialLp Weth amount
     function takeOverPool(uint256 tokenAmount, uint256 wethAmount, GoatTypes.InitParams memory initParams) external {
         if (_vestingUntil != _MAX_UINT32) {
             revert GoatErrors.ActionNotAllowed();
