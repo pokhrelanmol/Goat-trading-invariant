@@ -460,8 +460,8 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         GoatTypes.InitialLPInfo memory initialLpInfo = _initialLPInfo;
 
-        if (wethAmount < initialLpInfo.initialWethAdded) {
-            revert GoatErrors.InsufficientWethAmount();
+        if (wethAmount != initialLpInfo.initialWethAdded) {
+            revert GoatErrors.IncorrectWethAmount();
         }
 
         GoatTypes.LocalVariables_TakeOverPool memory localVars;
@@ -492,9 +492,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         if (tokenAmount != (localVars.tokenAmountForPresaleNew + localVars.tokenAmountForAmmNew)) {
             revert GoatErrors.IncorrectTokenAmount();
         }
-        if (wethAmount != initialLpInfo.initialWethAdded) {
-            revert GoatErrors.IncorrectWethAmount();
-        }
 
         IERC20(_token).safeTransferFrom(to, address(this), tokenAmount);
         if (wethAmount != 0) {
@@ -511,7 +508,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         delete _initialLPInfo;
         // new lp balance
-        lpBalance = Math.sqrt(initParams.virtualEth * initParams.initialTokenMatch) - MINIMUM_LIQUIDITY;
+        lpBalance = Math.sqrt(uint256(initParams.virtualEth) * initParams.initialTokenMatch) - MINIMUM_LIQUIDITY;
         _mint(to, lpBalance);
         _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
 
