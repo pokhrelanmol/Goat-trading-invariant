@@ -341,7 +341,7 @@ contract GoatExchangeTest is Test {
 
         _mintInitialLiquidity(initParams, users.lp);
         vm.startPrank(users.lp);
-        vm.expectRevert(GoatErrors.LPTransferRestricted.selector);
+        vm.expectRevert(GoatErrors.TransferFromInitialLpRestricted.selector);
         pair.transfer(users.bob, 1e18);
         vm.stopPrank();
     }
@@ -404,13 +404,38 @@ contract GoatExchangeTest is Test {
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
         uint256 totalBalance = pair.balanceOf(users.lp);
-        pair.transfer(address(pair), totalBalance);
         vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
         // So even if burn is called for alice and actual tokens was
         // transferred by initial lp this call should fail because
         // from of last token recieved by the contract is saved and checked
         // when burn is called.
-        pair.burn(users.alice);
+        pair.transfer(address(pair), totalBalance);
+        vm.stopPrank();
+    }
+
+    function testInitialRevertOnTransferingMoreThanFractionalAmountToPair() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 10e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+
+        // try transferring more than 1/4th initial lp balance to the
+        // pair contract
+        vm.startPrank(users.lp);
+
+        uint256 balance = pair.balanceOf(users.lp);
+        vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
+        pair.transfer(address(pair), balance);
+
+        GoatTypes.InitialLPInfo memory initialLPInfo = pair.getInitialLPInfo();
+
+        // lets try to revert by just adding 1 wei to fractional balance
+        vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
+        pair.transfer(address(pair), initialLPInfo.fractionalBalance + 1);
+
         vm.stopPrank();
     }
 
@@ -434,9 +459,8 @@ contract GoatExchangeTest is Test {
         pair.burn(users.lp);
 
         // Withdraw cooldown active check
-        pair.transfer(address(pair), initialLPInfo.fractionalBalance);
         vm.expectRevert(GoatErrors.WithdrawalCooldownActive.selector);
-        pair.burn(users.lp);
+        pair.transfer(address(pair), initialLPInfo.fractionalBalance);
         vm.stopPrank();
     }
 
@@ -481,11 +505,10 @@ contract GoatExchangeTest is Test {
         uint256 warpTime = block.timestamp + 3 days;
         // increase block.timestamp so that initial lp can remove liquidity
         vm.warp(warpTime);
-        // try to burn amount more than allowed
+        // try to transfer should not be allowed and burn limit exceeded should be thrown
         uint256 withdrawLpAmount = initialLPInfo.fractionalBalance + 1e18;
-        pair.transfer(address(pair), withdrawLpAmount);
         vm.expectRevert(GoatErrors.BurnLimitExceeded.selector);
-        pair.burn(users.lp);
+        pair.transfer(address(pair), withdrawLpAmount);
         vm.stopPrank();
     }
 
@@ -673,6 +696,7 @@ contract GoatExchangeTest is Test {
         uint256 wethAmount = 5e18;
         uint256 expectedTokenOut = (wethAmount * initParams.initialTokenMatch) / (initParams.virtualEth + wethAmount);
         uint256 wethAmountWithFees = (wethAmount * 10000) / 9901;
+        uint256 lpFees = ((wethAmountWithFees - wethAmount) * 40 / 100);
 
         vm.startPrank(users.alice);
         vm.deal(users.alice, wethAmountWithFees);
@@ -687,7 +711,8 @@ contract GoatExchangeTest is Test {
         pair.withdrawExcessToken();
         vm.stopPrank();
 
-        uint256 actualWethReserveInPool = wethAmount;
+        // presale lp fees goes to reserves
+        uint256 actualWethReserveInPool = wethAmount + lpFees;
 
         // at this point the pool has turned to an Amm
         // I need to check if the tokens in the pool match
@@ -698,7 +723,8 @@ contract GoatExchangeTest is Test {
         );
 
         (uint256 realEthReserve, uint256 realTokenReserve) = pair.getReserves();
+        assertEq(actualWethReserveInPool, realEthReserve);
+
         assertEq(tokenAmountForAmm, realTokenReserve);
-        assertEq(wethAmount, realEthReserve);
     }
 }

@@ -26,7 +26,6 @@ contract GoatErrors {
     error KInvariant();
     error LiquidityCooldownActive();
     error LiquidityLocked();
-    error LPTransferRestricted();
     error MevDetected();
     error MevDetected1();
     error MevDetected2();
@@ -39,6 +38,9 @@ contract GoatErrors {
     error Receive();
     error ShouldWithdrawAllBalance();
     error SupplyMoreThanBootstrapEth();
+    error TransferFromInitialLpRestricted();
+    error TransferLimitExceeded();
+    error TransferToInitialLpRestricted();
     error Unauthorized();
     error WithdrawalCooldownActive();
     error WrongToken();

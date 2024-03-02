@@ -42,15 +42,15 @@ contract GoatV1ERC20 {
         emit Approval(_owner, _spender, _value);
     }
 
-    function _transfer(address _from, address _to, uint256 _value, bool _bypassCheck) internal {
-        _beforeTokenTransfer(_from, _to, _value, _bypassCheck);
+    function _transfer(address _from, address _to, uint256 _value) internal {
+        _beforeTokenTransfer(_from, _to, _value);
         _balances[_from] -= _value;
         _balances[_to] += _value;
         emit Transfer(_from, _to, _value);
     }
 
     function transfer(address _to, uint256 _value) public returns (bool success) {
-        _transfer(msg.sender, _to, _value, false);
+        _transfer(msg.sender, _to, _value);
         return true;
     }
 
@@ -58,7 +58,7 @@ contract GoatV1ERC20 {
         if (_allowances[_from][msg.sender] != type(uint256).max) {
             _allowances[_from][msg.sender] -= _value;
         }
-        _transfer(_from, _to, _value, false);
+        _transfer(_from, _to, _value);
         return true;
     }
 
@@ -76,7 +76,7 @@ contract GoatV1ERC20 {
         return _allowances[_owner][_spender];
     }
 
-    function _beforeTokenTransfer(address _from, address _to, uint256 _value, bool _bypassCheck) internal virtual {
+    function _beforeTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
         // handle initial liquidity provider restrictions
     }
 

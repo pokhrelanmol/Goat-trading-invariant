@@ -233,39 +233,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         emit Mint(msg.sender, amountWeth, amountToken);
     }
 
-    function _handleInitialLiquidityProviderChecks(uint256 liquidity) internal view {
-        // this check is only needed here because lp's won't be able to add
-        // liquidity until the pool turns to an AMM
-        if (_vestingUntil == _MAX_UINT32) revert GoatErrors.PresalePeriod();
-
-        // check for actual lp constraints
-        GoatTypes.InitialLPInfo memory info = _initialLPInfo;
-        uint256 timestamp = block.timestamp;
-
-        if ((timestamp - 1 weeks) < info.lastWithdraw) {
-            revert GoatErrors.WithdrawalCooldownActive();
-        }
-        // don't check fractional balance if withdrawalLeft is 1
-        // user should be allowed to withdraw dust liquidity created
-        // due to division by 4 at this point
-        if (info.withdrawalLeft == 1) {
-            uint256 balance = balanceOf(info.liquidityProvider);
-            // as lps transfer liqudity to the pool when they send
-            // last withdraw request initial lp balance should be 0
-            // so that dust amount will not be stuck in the pool
-            if (balance != 0) {
-                revert GoatErrors.ShouldWithdrawAllBalance();
-            }
-        } else {
-            // For system to function correctly initial lp should be
-            // able to withdraw exactly fractional balance that is stored
-            // as we are allowing 4 withdrawals
-            if (liquidity != info.fractionalBalance) {
-                revert GoatErrors.BurnLimitExceeded();
-            }
-        }
-    }
-
     function _updateInitialLpInfo(uint256 liquidity, uint256 wethAmt, address lp, bool isBurn, bool internalBurn)
         internal
     {
@@ -298,7 +265,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // initial lp can bypass this check by using different
         // to address so _lastPoolTokenSender is used
         if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
-            _handleInitialLiquidityProviderChecks(liquidity);
+            if (_vestingUntil == _MAX_UINT32) revert GoatErrors.PresalePeriod();
             _updateInitialLpInfo(liquidity, 0, _initialLPInfo.liquidityProvider, true, false);
         }
 
@@ -531,26 +498,25 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // is there a need to mint different amount of liquidity tokens
         // to the one who is taking over for homogenity? because init params
         // is gonna get updated here
-        _transfer(initialLpInfo.liquidityProvider, to, lpBalance, true);
+        _burn(initialLpInfo.liquidityProvider, lpBalance);
+
+        delete _initialLPInfo;
+        // new lp balance
+        lpBalance = Math.sqrt(initParams.virtualEth * initParams.initialTokenMatch) - MINIMUM_LIQUIDITY;
+        _mint(to, lpBalance);
         _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
 
         // transfer excess token to the initial liquidity provider
-        IERC20(_token).safeTransfer(to, (localVars.tokenAmountForAmmOld + localVars.tokenAmountForPresaleOld));
+        IERC20(_token).safeTransfer(
+            initialLpInfo.liquidityProvider, (localVars.tokenAmountForAmmOld + localVars.tokenAmountForPresaleOld)
+        );
         if (initialLpInfo.initialWethAdded != 0) {
-            IERC20(_weth).safeTransfer(to, initialLpInfo.initialWethAdded);
+            IERC20(_weth).safeTransfer(initialLpInfo.liquidityProvider, initialLpInfo.initialWethAdded);
         }
         // update init vars
-        if (initParams.virtualEth != localVars.virtualEthOld) {
-            _virtualEth = uint112(initParams.virtualEth);
-        }
-        if (initParams.bootstrapEth != localVars.bootstrapEthOld) {
-            _bootstrapEth = uint112(initParams.bootstrapEth);
-        }
-        if (initParams.initialTokenMatch != localVars.initialTokenMatchOld) {
-            _initialTokenMatch = initParams.initialTokenMatch;
-        }
-
-        initialLpInfo.liquidityProvider = to;
+        _virtualEth = uint112(initParams.virtualEth);
+        _bootstrapEth = uint112(initParams.bootstrapEth);
+        _initialTokenMatch = initParams.initialTokenMatch;
 
         // final balance check
         uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
@@ -648,22 +614,37 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     // handle initial liquidity provider checks and update locked if lp is transferred
-    function _beforeTokenTransfer(address from, address to, uint256, bool bypassCheck) internal override {
-        if (!bypassCheck) {
-            GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
+    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
+        GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
+        if (to == lpInfo.liquidityProvider) revert GoatErrors.TransferToInitialLpRestricted();
+        if (from == lpInfo.liquidityProvider) {
+            // initial lp can't transfer funds to other addresses
+            if (to != address(this)) revert GoatErrors.TransferFromInitialLpRestricted();
 
-            if (from == lpInfo.liquidityProvider && to != address(this) || to == _initialLPInfo.liquidityProvider) {
-                revert GoatErrors.LPTransferRestricted();
-            }
-            if (_locked[from] > block.timestamp) {
-                revert GoatErrors.LiquidityLocked();
+            uint256 timestamp = block.timestamp;
+
+            // check for coldown period
+            if ((timestamp - 1 weeks) < lpInfo.lastWithdraw) {
+                revert GoatErrors.WithdrawalCooldownActive();
             }
 
-            if (to == address(this)) {
-                // We need to store from if lp is being sent to address(this) because
-                // initial user can bypass the checks inside burn by passing from argument
-                _lastPoolTokenSender = from;
+            // we only check for fractional balance if withdrawalLeft is not 1
+            // because last withdraw should be allowed to remove the dust amount
+            // as well that's not in the fractional balance that's caused due
+            // to division by 4
+            if (lpInfo.withdrawalLeft != 1 && (amount > lpInfo.fractionalBalance)) {
+                revert GoatErrors.BurnLimitExceeded();
             }
+        }
+
+        if (_locked[from] > block.timestamp) {
+            revert GoatErrors.LiquidityLocked();
+        }
+
+        if (to == address(this)) {
+            // We need to store from if lp is being sent to address(this) because
+            // initial user can bypass the checks inside burn by passing different from argument
+            _lastPoolTokenSender = from;
         }
 
         // Update fee rewards for both sender and receiver
