@@ -625,11 +625,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
         GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
         if (to == lpInfo.liquidityProvider) revert GoatErrors.TransferToInitialLpRestricted();
+        uint256 timestamp = block.timestamp;
         if (from == lpInfo.liquidityProvider) {
             // initial lp can't transfer funds to other addresses
             if (to != address(this)) revert GoatErrors.TransferFromInitialLpRestricted();
-
-            uint256 timestamp = block.timestamp;
 
             // check for coldown period
             if ((timestamp - 1 weeks) < lpInfo.lastWithdraw) {
@@ -650,9 +649,10 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                     revert GoatErrors.BurnLimitExceeded();
                 }
             }
+            _initialLPInfo.lastWithdraw = uint32(timestamp);
         }
 
-        if (_locked[from] > block.timestamp) {
+        if (_locked[from] > timestamp) {
             revert GoatErrors.LiquidityLocked();
         }
 
