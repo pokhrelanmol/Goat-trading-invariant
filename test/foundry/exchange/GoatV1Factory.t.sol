@@ -23,6 +23,30 @@ contract GoatV1FactoryTest is BaseTest {
         assertEq(pool, address(pair));
     }
 
+    function testRevertRemovePairUnauthorized() public {
+        GoatTypes.InitParams memory initParams = GoatTypes.InitParams(10e18, 10e18, 0, 1000e18);
+        GoatV1Pair pair = GoatV1Pair(factory.createPair(address(token), initParams));
+        assert(address(pair) != address(0));
+
+        vm.expectRevert(GoatErrors.Forbidden.selector);
+        factory.removePair(address(token));
+    }
+
+    function testRemovePairAndCreateNewSuccess() public {
+        GoatTypes.InitParams memory initParams = GoatTypes.InitParams(10e18, 10e18, 0, 1000e18);
+        GoatV1Pair pair = GoatV1Pair(factory.createPair(address(token), initParams));
+        assert(address(pair) != address(0));
+
+        vm.startPrank(address(pair));
+        factory.removePair(address(token));
+        assertEq(factory.getPool(address(token)), address(0));
+        vm.stopPrank();
+
+        // Create a pair again
+        pair = GoatV1Pair(factory.createPair(address(token), initParams));
+        assert(address(pair) != address(0));
+    }
+
     function testCreatePairWithInvalidParams() public {
         GoatTypes.InitParams memory initParams = GoatTypes.InitParams(0, 0, 0, 0);
         vm.expectRevert(GoatErrors.InvalidParams.selector);

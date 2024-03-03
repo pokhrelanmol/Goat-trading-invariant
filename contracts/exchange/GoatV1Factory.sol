@@ -15,7 +15,8 @@ contract GoatV1Factory {
     mapping(address => address) public pools;
     uint256 public minimumCollectableFees = 0.1 ether;
 
-    event PairCreated(address indexed token, address pair, uint256);
+    event PairCreated(address indexed weth, address indexed token, address pair);
+    event PairRemoved(address indexed token, address pair);
 
     constructor(address _weth) {
         weth = _weth;
@@ -28,11 +29,21 @@ contract GoatV1Factory {
         if (params.bootstrapEth == 0 || params.virtualEth == 0 || params.initialTokenMatch == 0) {
             revert GoatErrors.InvalidParams();
         }
-        bytes32 _salt = keccak256(abi.encodePacked(token, weth));
-        GoatV1Pair pair = new GoatV1Pair{ salt: _salt }();
+        GoatV1Pair pair = new GoatV1Pair();
         pair.initialize(token, weth, baseName, params);
         pools[token] = address(pair);
+        emit PairCreated(token, weth, address(pair));
         return address(pair);
+    }
+
+    function removePair(address token) external {
+        address pair = pools[token];
+        if (msg.sender != pair) {
+            revert GoatErrors.Forbidden();
+        }
+        delete pools[token];
+
+        emit PairRemoved(token, pair);
     }
 
     function getPool(address token) external view returns (address) {

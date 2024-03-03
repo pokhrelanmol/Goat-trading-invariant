@@ -8,4 +8,5 @@ interface IGoatV1Factory {
     function pendingTreasury() external view returns (address);
     function minimumCollectableFees() external view returns (uint256);
     function pools(address) external view returns (address);
+    function removePair(address token) external;
 }

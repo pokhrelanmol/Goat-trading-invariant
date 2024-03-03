@@ -426,6 +426,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // as bootstrap eth is not met we consider reserve eth as bootstrap eth
         // and turn presale into an amm with less liquidity.
         uint256 reserveEth = _reserveEth;
+
         uint256 bootstrapEth = reserveEth;
 
         // if we know token amount for AMM we can remove excess tokens that are staying in this contract
@@ -436,17 +437,18 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         uint256 poolTokenBalance = token.balanceOf(address(this));
 
         uint256 amountToTransferBack = poolTokenBalance - tokenAmtForAmm;
-
-        _burnLiquidityAndConvertToAmm(reserveEth, tokenAmtForAmm);
-
         // transfer excess token to the initial liquidity provider
         token.safeTransfer(initialLiquidityProvider, amountToTransferBack);
 
-        // update bootstrap eth because original bootstrap eth was not met and
-        // eth we raised until this point should be considered as bootstrap eth
-        _bootstrapEth = uint112(bootstrapEth);
-
-        _update(reserveEth, tokenAmtForAmm, true);
+        if (reserveEth != 0) {
+            _burnLiquidityAndConvertToAmm(reserveEth, tokenAmtForAmm);
+            // update bootstrap eth because original bootstrap eth was not met and
+            // eth we raised until this point should be considered as bootstrap eth
+            _bootstrapEth = uint112(bootstrapEth);
+            _update(reserveEth, tokenAmtForAmm, true);
+        } else {
+            IGoatV1Factory(factory).removePair(_token);
+        }
     }
 
     // teams can use this function to take over the pool by adding

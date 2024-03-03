@@ -622,7 +622,8 @@ contract GoatExchangeTest is Test {
         assertEq(lpBalance, expectedLpBalance);
     }
 
-    function testWithdrawAccessTokenSuccess() public {
+    /* ------------------------------- WITHDRAW EXCESS TOKEN TESTS ------------------------------ */
+    function testWithdrawExcessTokenSuccess() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
         initParams.initialEth = 0;
@@ -664,6 +665,81 @@ contract GoatExchangeTest is Test {
         assertEq(actualWethReserveInPool, realEthReserve);
 
         assertEq(tokenAmountForAmm, realTokenReserve);
+    }
+
+    function testWithdrawExcessTokenPairRemovalIfReservesAreEmpty() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+        address pairFromFactory = factory.getPool(address(goat));
+
+        assertEq(pairFromFactory, address(pair));
+
+        uint256 warpTime = block.timestamp + 32 days;
+        vm.warp(warpTime);
+        vm.startPrank(users.lp);
+        pair.withdrawExcessToken();
+        vm.stopPrank();
+
+        pairFromFactory = factory.getPool(address(goat));
+        assertEq(pairFromFactory, address(0));
+    }
+
+    function testRevertWithdrawExcessTokenDeadlineActive() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+
+        vm.startPrank(users.lp);
+        vm.expectRevert(GoatErrors.PresaleDeadlineActive.selector);
+        pair.withdrawExcessToken();
+        vm.stopPrank();
+    }
+
+    function testRevertWithdrawExcessTokenIfPoolIsAlreadyAnAmm() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 10e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+
+        // bypass genesis + 30 days
+        uint256 warpTime = block.timestamp + 32 days;
+        vm.warp(warpTime);
+
+        vm.startPrank(users.lp);
+        vm.expectRevert(GoatErrors.ActionNotAllowed.selector);
+        pair.withdrawExcessToken();
+        vm.stopPrank();
+    }
+
+    function testRevertWithdrawExcessTokenIfCallerIsNotInitialLp() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 5e18;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+
+        // bypass genesis + 30 days
+        uint256 warpTime = block.timestamp + 32 days;
+        vm.warp(warpTime);
+
+        vm.startPrank(users.lp1);
+        vm.expectRevert(GoatErrors.Unauthorized.selector);
+        pair.withdrawExcessToken();
+        vm.stopPrank();
     }
 
     /* ------------------------------- TAKEOVER TESTS ------------------------------ */
