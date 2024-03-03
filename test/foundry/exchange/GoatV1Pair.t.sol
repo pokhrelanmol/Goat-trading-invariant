@@ -499,6 +499,7 @@ contract GoatExchangeTest is Test {
         assertEq(tokenBalAfter - tokenBalBefore, tokenAmt);
     }
 
+    /* ------------------------------- SWAP TESTS ------------------------------ */
     function testSwapWhenPoolIsInPresale() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 10e18;
@@ -510,7 +511,8 @@ contract GoatExchangeTest is Test {
 
         vm.startPrank(users.alice);
         uint256 wethAmount = 5e18;
-        uint256 amountTokenOut = 250e18;
+        // 5 eth should give you tokens almost ~333 in this case
+        uint256 amountTokenOut = 333e18;
         uint256 amountWethOut = 0;
         uint256 wethWithFees = wethAmount * 10000 / 9901;
         vm.deal(users.alice, wethWithFees);
@@ -519,6 +521,73 @@ contract GoatExchangeTest is Test {
         weth.transfer(address(pair), wethWithFees);
         pair.swap(amountTokenOut, amountWethOut, users.alice);
         vm.stopPrank();
+    }
+
+    function _swapWethForTokens(uint256 wethAmount, uint256 amountTokenOut, address to, uint8 shouldRevert) private {
+        vm.startPrank(to);
+        // update weth amount to include fees
+        uint256 wethWithFees = wethAmount * 10000 / 9901;
+        vm.deal(to, wethWithFees);
+        weth.deposit{value: wethWithFees}();
+        weth.transfer(address(pair), wethWithFees);
+        if (shouldRevert == 1) {
+            vm.expectRevert(GoatErrors.MevDetected1.selector);
+        } else if (shouldRevert == 2) {
+            vm.expectRevert(GoatErrors.MevDetected2.selector);
+        }
+        pair.swap(amountTokenOut, 0, to);
+        vm.stopPrank();
+    }
+
+    function _swapTokensForWeth(uint256 tokenAmount, uint256 amountWethOut, address to, uint256 shouldRevert) private {
+        vm.startPrank(to);
+        goat.transfer(address(pair), tokenAmount);
+        if (shouldRevert == 1) {
+            vm.expectRevert(GoatErrors.MevDetected1.selector);
+        } else if (shouldRevert == 2) {
+            vm.expectRevert(GoatErrors.MevDetected2.selector);
+        }
+        pair.swap(0, amountWethOut, to);
+        vm.stopPrank();
+    }
+
+    function testSwapRevertMevType1() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+        // using random amounts for in and out just for
+        // identifying if mev is working
+        // frontrun txn BUY
+        _swapWethForTokens(1e18, 20e18, users.alice, 0);
+        // user txn BUY
+        _swapWethForTokens(1e18, 20e18, users.bob, 0);
+        // sandwich txn SELL
+        _swapTokensForWeth(2e18, 2e17, users.alice, 1);
+    }
+
+    function testSwapRevertMevType2() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 10e18;
+        initParams.initialEth = 0;
+        initParams.initialTokenMatch = 1000e18;
+        initParams.bootstrapEth = 10e18;
+
+        _mintInitialLiquidity(initParams, users.lp);
+        // normal buy
+        _swapWethForTokens(1e18, 20e18, users.alice, 0);
+        // normal buy
+        _swapWethForTokens(1e18, 20e18, users.bob, 0);
+        vm.warp(block.timestamp + 12);
+        // frontRun txn SELL
+        _swapTokensForWeth(10e18, 1e17, users.alice, 0);
+        // user txn SELL
+        _swapTokensForWeth(11e18, 1e17, users.bob, 0);
+        // frontrunner buy
+        _swapWethForTokens(1e18, 20e18, users.alice, 2);
     }
 
     function testSwapToChangePoolFromPresaleToAnAmm() public {
