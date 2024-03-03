@@ -547,9 +547,8 @@ contract GoatV1RouterTest is BaseTest {
         uint256 totalLpFees = (fees * 40) / 100;
         assertEq(pair.getPendingLiquidityFees(), totalLpFees);
         uint256 lpFees = pair.lpFees(address(this));
-        //How lp fees is calculated
 
-        // assertEq(totalLpFees,lpFees); // TODO : precision loss
+        assertEq(totalLpFees - 1, lpFees);
     }
 
     function testRemoveLiquidityAllInFourWeeks() public {
@@ -1479,7 +1478,8 @@ contract GoatV1RouterTest is BaseTest {
         router.removeLiquidity(address(token), fractionalLiquidity, 0, 0, lp_1, block.timestamp);
         uint256 liquidityFee = pair.getPendingLiquidityFees();
         uint256 userFeeAccured = pair.lpFees(address(this));
-        // assertEq(liquidityFee, userFeeAccured); //TODO: we have a rounding up in favor of user
+        // Deduct 1 wei for minimum liquidity mint
+        assertEq(liquidityFee - 1, userFeeAccured);
         uint256 balanceBefore = weth.balanceOf(address(this));
         router.withdrawFees(address(token), address(this));
         assertEq(weth.balanceOf(address(this)), balanceBefore + userFeeAccured);
