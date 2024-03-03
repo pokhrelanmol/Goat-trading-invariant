@@ -139,9 +139,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         lastTrade = _lastTrade;
         if (lastTrade < timestamp) {
             lastTrade = timestamp;
-        } else if (lastTrade == timestamp && swapType == 1) {
-            lastTrade = timestamp + swapType;
-        } else if (_lastTrade == timestamp && swapType == 2) {
+        } else if (lastTrade == timestamp) {
             lastTrade = timestamp + swapType;
         } else if (lastTrade == timestamp + 1) {
             if (swapType == 2) {
