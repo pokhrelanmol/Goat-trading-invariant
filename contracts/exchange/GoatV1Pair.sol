@@ -168,6 +168,24 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Should be called from a contract with safety checks
+     * @notice Mints liquidity tokens in exchange for ETH and tokens deposited into the pool.
+     * @dev This function allows users to add liquidity to the pool,
+     *      receiving liquidity tokens in return. It includes checks for
+     *      the presale period and calculates liquidity based on virtual amounts at presale
+     *      and deposited ETH and tokens when it's an amm.
+     * @param to The address to receive the minted liquidity tokens.
+     * @return liquidity The amount of liquidity tokens minted.
+     * Requirements:
+     * - Cannot add liquidity during the presale period if the total supply is greater than 0.
+     * - The amount of ETH deposited must not exceed the bootstrap ETH amount on first mint.
+     * - Ensures the deposited token amount matches the required amount for liquidity bootstrapping.
+     * Emits:
+     * - A `Mint` event with details for the mint transaction.
+     * Security:
+     * - Uses `nonReentrant` modifier to prevent reentrancy attacks.
+     */
     function mint(address to) external nonReentrant returns (uint256 liquidity) {
         uint256 totalSupply_ = totalSupply();
         uint256 amountWeth;
@@ -213,7 +231,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             liquidity = Math.min((amountWeth * totalSupply_) / reserveEth, (amountToken * totalSupply_) / reserveToken);
         }
 
-        // @note can this be an attack area to grief initial lp?
+        // @note can this be an attack area to grief initial lp by using to as initial lp?
         if (mintVars.isFirstMint || to == _initialLPInfo.liquidityProvider) {
             _updateInitialLpInfo(liquidity, balanceEth, to, false, false);
         }
@@ -257,6 +275,21 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _initialLPInfo = info;
     }
 
+    /**
+     * @notice Should be called from a contract with safety checks
+     * @notice Burns liquidity tokens to remove liquidity from the pool and withdraw ETH and tokens.
+     * @dev This function allows liquidity providers to burn their liquidity
+     *         tokens in exchange for the underlying assets (ETH and tokens).
+     *         It updates the initial liquidity provider information,
+     *         applies fee rewards, and performs necessary state updates.
+     * @param to The address to which the withdrawn ETH and tokens will be sent.
+     * @return amountWeth The amount of WETH withdrawn from the pool.
+     * @return amountToken The amount of tokens withdrawn from the pool.
+     * Reverts:
+     * - If the function is called by the initial liquidity provider during the presale period.
+     * Emits:
+     * - A `Burn` event with necessary details of the burn.
+     */
     function burn(address to) external returns (uint256 amountWeth, uint256 amountToken) {
         uint256 liquidity = balanceOf(address(this));
 
@@ -291,7 +324,29 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         emit Burn(msg.sender, amountWeth, amountToken, to);
     }
 
-    // should be called from a contract with safety checks
+    /**
+     * @notice Should be called from a contract with safety checks
+     * @notice Executes a swap from ETH to tokens or tokens to ETH.
+     * @dev This function handles the swapping logic, including MEV
+     *  checks, fee application, and updating reserves.
+     * @param amountTokenOut The amount of tokens to be sent out.
+     * @param amountWethOut The amount of WETH to be sent out.
+     * @param to The address to receive the output of the swap.
+     * Requirements:
+     * - Either `amountTokenOut` or `amountWethOut` must be greater than 0, but not both.
+     * - The output amount must not exceed the available reserves in the pool.
+     * - If the swap occurs in vesting period (presale included),
+     *   it updates the presale balance for the buyer.
+     * - Applies fees and updates reserves accordingly.
+     * - Ensures the K invariant holds after the swap,
+     *   adjusting for virtual reserves during the presale period.
+     * - Transfers the specified `amountTokenOut` or `amountWethOut` to the address `to`.
+     * - In case of a presale swap, adds LP fees to the reserve ETH.
+     * Emits:
+     * - A `Swap` event with details about the amounts swapped.
+     * Security:
+     * - Uses `nonReentrant` modifier to prevent reentrancy attacks.
+     */
     function swap(uint256 amountTokenOut, uint256 amountWethOut, address to) external nonReentrant {
         if (amountTokenOut == 0 && amountWethOut == 0) {
             revert GoatErrors.InsufficientOutputAmount();
@@ -373,6 +428,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             swapVars.finalReserveEth += swapVars.lpFeesCollected;
         }
         _update(swapVars.finalReserveEth, swapVars.finalReserveToken, true);
+        // TODO: Emit swap event with similar details to uniswap v2 after audit
     }
 
     function _getActualReserves() internal view returns (uint112 reserveEth, uint112 reserveToken) {
