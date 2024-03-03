@@ -8,6 +8,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {console2} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {GoatTypes} from "../../../contracts/library/GoatTypes.sol";
+import {GoatLibrary} from "../../../contracts/library/GoatLibrary.sol";
 
 contract GoatV1RouterTest is BaseTest {
     function testConstructor() public {
@@ -952,11 +953,63 @@ contract GoatV1RouterTest is BaseTest {
         assertEq(pair.getPresaleBalance(swapper), 0);
     }
 
-    function testSwapWethToTokenForNormalUser() public {
-        //TODO: test for normal user
+    function testAddLiqudityForNormalUser() public {
+        _addLiquidityAndConvertToAmm();
+
+        address normalLp = address(0x123);
+        weth.transfer(normalLp, 5e18);
+
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        (uint256 wethReserve, uint256 tokenReserve) = pair.getReserves();
+        uint256 quoteToken = GoatLibrary.quote(5e18, wethReserve, tokenReserve);
+        token.mint(normalLp, quoteToken);
+        GoatTypes.InitParams memory initParams = GoatTypes.InitParams(
+            0, // virtualEth
+            0, // bootstrapEth
+            0, // initialEth
+            0 // initialTokenMatch
+        );
+        uint256 totalSupply = pair.totalSupply();
+        vm.startPrank(normalLp);
+        weth.approve(address(router), 5e18);
+        token.approve(address(router), quoteToken);
+        (,, uint256 liquidity) =
+            router.addLiquidity(address(token), quoteToken, 5e18, 0, 0, normalLp, block.timestamp, initParams);
+        uint256 liquidityUsingWeth = (5e18 * totalSupply) / wethReserve;
+        uint256 liquidityUsingToken = (quoteToken * totalSupply) / tokenReserve;
+        uint256 expectedLiquidity = liquidityUsingWeth < liquidityUsingToken ? liquidityUsingWeth : liquidityUsingToken; // min
+        assertEq(liquidity, expectedLiquidity);
+
+        vm.stopPrank();
+    }
+
+    function testProtocolFeesTransferToTreasuryAfteCertainAmount() public {
+        // Change the treasury address
+        address newTreasury = makeAddr("treasury");
+        factory.setTreasury(newTreasury);
+        vm.startPrank(newTreasury);
+        factory.acceptTreasury();
+        vm.stopPrank();
+
+        _addLiquidityAndConvertToAmm();
+        weth.transfer(swapper, 50e18);
+        vm.startPrank(swapper);
+        weth.approve(address(router), 50e18);
+        //Swap large amount to met the reuired 0.1 treshold
+        router.swapWethForExactTokens(50e18, 0, address(token), swapper, block.timestamp);
+        vm.stopPrank();
+        uint256 fees = (50e18 * 99) / 10000; // 1% fee
+        uint256 liquidityFee = (fees * 40) / 100;
+        uint256 protocolFee = fees - liquidityFee;
+        uint256 treasuryBalAfterFee = weth.balanceOf(newTreasury);
+        assertEq(treasuryBalAfterFee, protocolFee);
+        GoatV1Pair pair = GoatV1Pair(factory.getPool(address(token)));
+        assertEq(pair.getPendingProtocolFees(), 0);
+        assertEq(pair.getPendingLiquidityFees(), liquidityFee);
     }
 
     /* ---------------------------- SWAP WETH-TOKEN REVERT TESTS --------------------------- */
+
     function testSwapWethToTokenRevertsIfPoolDoesNotExist() public {
         vm.startPrank(swapper);
         weth.approve(address(router), 5e18);
