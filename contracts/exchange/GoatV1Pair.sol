@@ -251,7 +251,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             info.withdrawalLeft = 4;
             info.liquidityProvider = lp;
             if (wethAmt != 0) {
-                info.initialWethAdded = wethAmt;
+                info.initialWethAdded = uint104(wethAmt);
             }
         }
 

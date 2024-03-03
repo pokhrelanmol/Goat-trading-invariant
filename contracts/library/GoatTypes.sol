@@ -52,7 +52,8 @@ contract GoatTypes {
 
     struct InitialLPInfo {
         address liquidityProvider;
-        uint256 initialWethAdded;
+        // it's safe to use uint104 as it can hold 20 trillion ether
+        uint104 initialWethAdded;
         uint112 fractionalBalance;
         uint32 lastWithdraw;
         uint8 withdrawalLeft;
