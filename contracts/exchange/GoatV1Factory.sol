@@ -29,6 +29,12 @@ contract GoatV1Factory {
         if (params.bootstrapEth == 0 || params.virtualEth == 0 || params.initialTokenMatch == 0) {
             revert GoatErrors.InvalidParams();
         }
+        if (pools[token] != address(0)) {
+            revert GoatErrors.PairExists();
+        }
+        if (token == weth) {
+            revert GoatErrors.CannnotPairWithBaseAsset();
+        }
         GoatV1Pair pair = new GoatV1Pair();
         pair.initialize(token, weth, baseName, params);
         pools[token] = address(pair);

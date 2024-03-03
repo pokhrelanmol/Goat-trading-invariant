@@ -4,6 +4,7 @@ pragma solidity 0.8.19;
 contract GoatErrors {
     error ActionNotAllowed();
     error BurnLimitExceeded();
+    error CannnotPairWithBaseAsset();
     error EthTransferFailed();
     error Expired();
     error FailedToSendEther();
@@ -33,6 +34,7 @@ contract GoatErrors {
     error MultipleOutputAmounts();
     error NotEnoughBalance();
     error OnlyGov();
+    error PairExists();
     error PoolDoesNotExist();
     error PresaleDeadlineActive();
     error PresalePeriod();
