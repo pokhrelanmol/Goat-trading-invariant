@@ -551,7 +551,8 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         IERC20(_token).safeTransferFrom(to, address(this), tokenAmount);
         if (wethAmount != 0) {
-            IERC20(_weth).safeTransferFrom(to, address(this), wethAmount);
+            // Transfer it directly to the initial lp
+            IERC20(_weth).safeTransferFrom(to, initialLpInfo.liquidityProvider, initialLpInfo.initialWethAdded);
         }
 
         //
@@ -572,9 +573,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         IERC20(_token).safeTransfer(
             initialLpInfo.liquidityProvider, (localVars.tokenAmountForAmmOld + localVars.tokenAmountForPresaleOld)
         );
-        if (initialLpInfo.initialWethAdded != 0) {
-            IERC20(_weth).safeTransfer(initialLpInfo.liquidityProvider, initialLpInfo.initialWethAdded);
-        }
         // update init vars
         _virtualEth = uint112(initParams.virtualEth);
         _bootstrapEth = uint112(initParams.bootstrapEth);

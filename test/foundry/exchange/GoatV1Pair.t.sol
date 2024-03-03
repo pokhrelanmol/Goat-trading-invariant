@@ -891,14 +891,14 @@ contract GoatExchangeTest is Test {
         vm.stopPrank();
     }
 
-    function testPoolTakeOverSuccess() public {
+    function testPoolTakeOverSuccessWithoutWeth() public {
         GoatTypes.InitParams memory initParams;
         initParams.virtualEth = 100e18;
         initParams.initialEth = 0;
         initParams.initialTokenMatch = 100e18;
         initParams.bootstrapEth = 10e18;
 
-        _mintInitialLiquidity(initParams, users.lp);
+        (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, users.lp);
 
         uint256 lpPoolBalance = pair.balanceOf(users.lp);
         assertEq(lpPoolBalance, 100e18 - MINIMUM_LIQUIDITY);
@@ -910,11 +910,67 @@ contract GoatExchangeTest is Test {
             initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
         );
 
+        uint256 lpTokenBalance = goat.balanceOf(users.lp);
+        assertEq(lpTokenBalance, 0);
+
         _fundMe(goat, users.lp1, takeOverBootstrapTokenAmt);
         vm.startPrank(users.lp1);
         goat.approve(address(pair), takeOverBootstrapTokenAmt);
         pair.takeOverPool(takeOverBootstrapTokenAmt, 0, initParams);
         vm.stopPrank();
+
+        // lp goat balance should sum of presale and amm bal
+        lpTokenBalance = goat.balanceOf(users.lp);
+        assertEq(lpTokenBalance, (tokenAmtForPresale + tokenAmtForAmm));
+
+        uint256 lp1PoolBalance = pair.balanceOf(users.lp1);
+        assertEq(lp1PoolBalance, 100e18 - MINIMUM_LIQUIDITY);
+
+        lpPoolBalance = pair.balanceOf(users.lp);
+        assertEq(lpPoolBalance, 0);
+
+        GoatTypes.InitialLPInfo memory lpInfo = pair.getInitialLPInfo();
+        assertEq(lpInfo.liquidityProvider, users.lp1);
+    }
+
+    function testPoolTakeOverSuccessWithWeth() public {
+        GoatTypes.InitParams memory initParams;
+        initParams.virtualEth = 100e18;
+        initParams.initialEth = 5e18;
+        initParams.initialTokenMatch = 100e18;
+        initParams.bootstrapEth = 10e18;
+
+        (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) = _mintInitialLiquidity(initParams, users.lp);
+
+        uint256 lpPoolBalance = pair.balanceOf(users.lp);
+        assertEq(lpPoolBalance, 100e18 - MINIMUM_LIQUIDITY);
+
+        // change init params for takeover
+        initParams.virtualEth = 10e18;
+        initParams.initialTokenMatch = 1000e18;
+        uint256 takeOverBootstrapTokenAmt = GoatLibrary.getActualBootstrapTokenAmount(
+            initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
+        );
+
+        uint256 lpTokenBalance = goat.balanceOf(users.lp);
+        assertEq(lpTokenBalance, 0);
+
+        uint256 lpWethBalance = weth.balanceOf(users.lp);
+
+        _fundMe(goat, users.lp1, takeOverBootstrapTokenAmt);
+        _fundMe(weth, users.lp1, initParams.initialEth);
+        vm.startPrank(users.lp1);
+        goat.approve(address(pair), takeOverBootstrapTokenAmt);
+        weth.approve(address(pair), initParams.initialEth);
+        pair.takeOverPool(takeOverBootstrapTokenAmt, initParams.initialEth, initParams);
+        vm.stopPrank();
+
+        // lp goat balance should sum of presale and amm bal
+        lpTokenBalance = goat.balanceOf(users.lp);
+        assertEq(lpTokenBalance, (tokenAmtForPresale + tokenAmtForAmm));
+
+        lpWethBalance = weth.balanceOf(users.lp);
+        assertEq(lpWethBalance, initParams.initialEth);
 
         uint256 lp1PoolBalance = pair.balanceOf(users.lp1);
         assertEq(lp1PoolBalance, 100e18 - MINIMUM_LIQUIDITY);
