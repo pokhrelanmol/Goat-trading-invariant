@@ -429,6 +429,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
         _update(swapVars.finalReserveEth, swapVars.finalReserveToken, true);
         // TODO: Emit swap event with similar details to uniswap v2 after audit
+        // @note what should be the swap amount values for emit here? Should it include fees?
     }
 
     function _getActualReserves() internal view returns (uint112 reserveEth, uint112 reserveToken) {
@@ -457,13 +458,26 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
     }
 
-    /// @notice returns actual reserves if pool has turned into an AMM else returns virtual reserves
+    /// @notice returns real reserves if pool has turned into an AMM else returns virtual reserves
     function getReserves() public view returns (uint112 reserveEth, uint112 reserveToken) {
         (reserveEth, reserveToken) = _getReserves(_vestingUntil, _reserveEth, _reserveToken);
     }
 
-    // this function converts the pool to an AMM with less liquidity and removes
-    // the excess token from the pool
+    /**
+     * @notice Withdraws excess tokens from the pool and converts it into an AMM.
+     * @dev Allows the initial liquidity provider to withdraw tokens if
+     *  bootstrap goals are not met even after 1 month of launching the pool and
+     *  forces the pool to transition to an AMM with the real reserve of with and
+     *  matching tokens required at that point.
+     * Requirements:
+     * - Can only be called by the initial liquidity provider.
+     * - Can only be called 30 days after the contract's genesis.
+     * - Pool should transition to an AMM after successful exectuion of this function.
+     * Post-Conditions:
+     * - Excess tokens are returned to the initial liquidity provider.
+     * - The pool transitions to an AMM with the real reserves of ETH and tokens.
+     * - Deletes the pair from the factory if eth raised is zero.
+     */
     function withdrawExcessToken() external {
         uint256 timestamp = block.timestamp;
         // initial liquidty provider can call this function after 30 days from genesis
@@ -505,18 +519,37 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
     }
 
-    // teams can use this function to take over the pool by adding
-    // at least 10% more tokens and weth added by the initial LP.
-    // This function can be used to bypass griefing by the malicious users
-    // weth amount passed here should exactly match the initialLp Weth amount
-    function takeOverPool(uint256 tokenAmount, uint256 wethAmount, GoatTypes.InitParams memory initParams) external {
+    /**
+     * @notice Allows a team to take over a pool from malicious actors.
+     * @dev Prevents malicious actors from griefing the pool by setting unfavorable
+     *   initial conditions. It requires the new team to match the initial liquidity
+     *   provider's WETH amount and exceed their token contribution by at least 10%.
+     *   This function also resets the pool's initial liquidity parameters.
+     * @param tokenAmount The amount of tokens being added to take over the pool.
+     * @param initParams The new initial parameters for the pool.
+     * Requirements:
+     * - Pool must be in presale period.
+     * - `initParams.initialEth` must exactly match the initial liquidity provider's WETH contribution.
+     * - The `tokenAmount` must be at least 10% greater and equal to bootstrap token needed for new params.
+     * Reverts:
+     * - If the pool has already transitioned to an AMM.
+     * - If `tokenAmount` is less than the minimum required to take over the pool.
+     * - If `tokenAmount` does not match the new combined token amount requirements.
+     * Post-Conditions:
+     * - Transfers the amount of token and weth deposited by initial lp to it's address.
+     * - Burns the initial liquidity provider's tokens and
+     *   mints new liquidity tokens to the new team based on the new `initParams`.
+     * - Resets the pool's initial liquidity parameters to the new `initParams`.
+     * - Updates the pool's reserves to reflect the new token balance.
+     */
+    function takeOverPool(uint256 tokenAmount, GoatTypes.InitParams memory initParams) external {
         if (_vestingUntil != _MAX_UINT32) {
             revert GoatErrors.ActionNotAllowed();
         }
 
         GoatTypes.InitialLPInfo memory initialLpInfo = _initialLPInfo;
 
-        if (wethAmount != initialLpInfo.initialWethAdded) {
+        if (initParams.initialEth != initialLpInfo.initialWethAdded) {
             revert GoatErrors.IncorrectWethAmount();
         }
 
@@ -542,7 +575,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // new token amount for presale if initParams are changed
         (localVars.tokenAmountForPresaleNew, localVars.tokenAmountForAmmNew) = _tokenAmountsForLiquidityBootstrap(
-            initParams.virtualEth, initParams.bootstrapEth, wethAmount, initParams.initialTokenMatch
+            initParams.virtualEth, initParams.bootstrapEth, initParams.initialEth, initParams.initialTokenMatch
         );
 
         if (tokenAmount != (localVars.tokenAmountForPresaleNew + localVars.tokenAmountForAmmNew)) {
@@ -550,7 +583,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
 
         IERC20(_token).safeTransferFrom(to, address(this), tokenAmount);
-        if (wethAmount != 0) {
+        if (initParams.initialEth != 0) {
             // Transfer weth directly to the initial lp
             IERC20(_weth).safeTransferFrom(to, initialLpInfo.liquidityProvider, initialLpInfo.initialWethAdded);
         }
@@ -562,7 +595,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         // new lp balance
         lpBalance = Math.sqrt(uint256(initParams.virtualEth) * initParams.initialTokenMatch) - MINIMUM_LIQUIDITY;
         _mint(to, lpBalance);
-        _updateInitialLpInfo(lpBalance, wethAmount, to, false, false);
+        _updateInitialLpInfo(lpBalance, initParams.initialEth, to, false, false);
 
         // transfer excess token to the initial liquidity provider
         IERC20(_token).safeTransfer(
@@ -573,7 +606,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _bootstrapEth = uint112(initParams.bootstrapEth);
         _initialTokenMatch = initParams.initialTokenMatch;
 
-        // final balance check is this necessary?
+        //@note final balance check is this necessary?
         uint256 tokenBalance = IERC20(_token).balanceOf(address(this));
         // update reserves
         _update(_reserveEth, tokenBalance, false);
