@@ -551,16 +551,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         IERC20(_token).safeTransferFrom(to, address(this), tokenAmount);
         if (wethAmount != 0) {
-            // Transfer it directly to the initial lp
+            // Transfer weth directly to the initial lp
             IERC20(_weth).safeTransferFrom(to, initialLpInfo.liquidityProvider, initialLpInfo.initialWethAdded);
         }
 
-        //
         uint256 lpBalance = balanceOf(initialLpInfo.liquidityProvider);
-        // @note even though future mints are calculated using totalSupply
-        // is there a need to mint different amount of liquidity tokens
-        // to the one who is taking over for homogenity? because init params
-        // is gonna get updated here
         _burn(initialLpInfo.liquidityProvider, lpBalance);
 
         delete _initialLPInfo;
@@ -614,22 +609,14 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     function withdrawFees(address to) external {
-        uint256 feesCollected = lpFees[to];
-        lpFees[to] = 0;
-        uint256 feesPerToken = feesPerTokenStored - feesPerTokenPaid[to];
-
-        feesPerTokenPaid[to] = feesPerTokenStored;
-
-        uint256 feesAccured = (balanceOf(to) * feesPerToken) / 1e18;
-
-        uint256 totalFees = feesCollected + feesAccured;
+        uint256 totalFees = _earned(to, feesPerTokenStored);
 
         if (totalFees != 0) {
+            feesPerTokenPaid[to] = feesPerTokenStored;
+            lpFees[to] = 0;
+            _pendingLiquidityFees -= uint112(totalFees);
             IERC20(_weth).safeTransfer(to, totalFees);
         }
-
-        // update pending liquidity fees
-        _pendingLiquidityFees -= uint112(totalFees);
         // is there a need to check if weth balance is in sync with reserve and fees?
     }
 
