@@ -760,31 +760,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         vestingUntil_ = _vestingUntil;
     }
 
-    // read for test purposes only
-    function getStateInfo()
-        external
-        view
-        returns (
-            uint112 reserveEth,
-            uint112 reserveToken,
-            uint112 virtualEth,
-            uint112 initialTokenMatch,
-            uint32 vestingUntil_,
-            uint32 lastTrade,
-            uint256 bootstrapEth,
-            uint32 genesis
-        )
-    {
-        reserveEth = _reserveEth;
-        reserveToken = _reserveToken;
-        virtualEth = _virtualEth;
-        initialTokenMatch = _initialTokenMatch;
-        vestingUntil_ = _vestingUntil;
-        lastTrade = _lastTrade;
-        bootstrapEth = _bootstrapEth;
-        genesis = _genesis;
-    }
-
     function getStateInfoForPresale()
         external
         view
