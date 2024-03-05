@@ -33,7 +33,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     // Figure out a way to use excess 12 bytes in here to store something
     address private _token;
     address private _weth;
-    address private _lastPoolTokenSender;
 
     uint112 private _virtualEth;
     uint112 private _initialTokenMatch;
@@ -43,15 +42,17 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     uint112 private _reserveEth;
     // token reserve in the pool
     uint112 private _reserveToken;
+    // variable used to check for mev
     uint32 private _lastTrade;
 
+    // Amounts of eth needed to turn pool into an amm
     uint112 private _bootstrapEth;
     // total lp fees that are not withdrawn
     uint112 private _pendingLiquidityFees;
 
-    // Scaled fees per token scaled by 1e18
+    // Fees per token scaled by 1e18
     uint184 public feesPerTokenStored;
-    // this variable can store >4500 ether
+    // Can store >4500 ether which is more than enough
     uint72 private _pendingProtocolFees;
 
     mapping(address => uint256) private _presaleBalances;
@@ -134,6 +135,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     }
 
     function _handleMevCheck(bool isBuy) internal returns (uint32 lastTrade) {
+        // @note  Known bug for chains that have block time less than 2 second
         uint8 swapType = isBuy ? 1 : 2;
         uint32 timestamp = uint32(block.timestamp);
         lastTrade = _lastTrade;
@@ -295,10 +297,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
 
         // initial lp can bypass this check by using different
         // to address so _lastPoolTokenSender is used
-        if (_lastPoolTokenSender == _initialLPInfo.liquidityProvider) {
-            if (_vestingUntil == _MAX_UINT32) revert GoatErrors.PresalePeriod();
-            _updateInitialLpInfo(liquidity, 0, _initialLPInfo.liquidityProvider, true, false);
-        }
+        if (_vestingUntil == _MAX_UINT32) revert GoatErrors.PresalePeriod();
 
         uint256 balanceEth = IERC20(_weth).balanceOf(address(this));
         uint256 balanceToken = IERC20(_token).balanceOf(address(this));
@@ -721,17 +720,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                     revert GoatErrors.BurnLimitExceeded();
                 }
             }
-            _initialLPInfo.lastWithdraw = uint32(timestamp);
+            _updateInitialLpInfo(amount, 0, _initialLPInfo.liquidityProvider, true, false);
         }
 
         if (_locked[from] > timestamp) {
             revert GoatErrors.LiquidityLocked();
-        }
-
-        if (to == address(this)) {
-            // We need to store from if lp is being sent to address(this) because
-            // initial user can bypass the checks inside burn by passing different from argument
-            _lastPoolTokenSender = from;
         }
 
         // Update fee rewards for both sender and receiver
