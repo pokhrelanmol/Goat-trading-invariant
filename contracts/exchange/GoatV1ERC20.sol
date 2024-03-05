@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 contract GoatV1ERC20 {
     // Token metadata
+    uint256 private constant _TWO_DAYS = 2 days;
 
     string public name;
     string public symbol;
@@ -25,7 +26,16 @@ contract GoatV1ERC20 {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     function _mint(address _to, uint256 _value) internal {
-        _locked[_to] = uint32(block.timestamp + 2 days);
+        uint32 lockUntil;
+        if (_value > _totalSupply) {
+            lockUntil = uint32(block.timestamp + _TWO_DAYS);
+        } else {
+            lockUntil = uint32(block.timestamp + ((_value * _TWO_DAYS) / _totalSupply));
+        }
+
+        if (lockUntil > _locked[_to]) {
+            _locked[_to] = lockUntil;
+        }
         _totalSupply += _value;
         _balances[_to] += _value;
         emit Transfer(address(0), _to, _value);
