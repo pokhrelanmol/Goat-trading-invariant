@@ -243,7 +243,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             _mint(address(0), MINIMUM_LIQUIDITY);
         }
 
-        _locked[to] = uint32(block.timestamp + _MIN_LOCK_PERIOD);
         _mint(to, liquidity);
 
         _update(balanceEth, balanceToken, false);

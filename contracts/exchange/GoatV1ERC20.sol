@@ -36,8 +36,10 @@ contract GoatV1ERC20 {
         if (lockUntil > _locked[_to]) {
             _locked[_to] = lockUntil;
         }
+
         _totalSupply += _value;
         _balances[_to] += _value;
+
         emit Transfer(address(0), _to, _value);
     }
 
