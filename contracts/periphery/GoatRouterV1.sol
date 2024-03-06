@@ -94,21 +94,20 @@ contract GoatV1Router is ReentrancyGuard {
         return (vars.tokenAmount, vars.wethAmount, vars.isNewPair);
     }
 
-    function addLiquidity(
+    function _ensurePoolAndPrepareLiqudityParameters(
         address token,
         uint256 tokenDesired,
         uint256 wethDesired,
         uint256 tokenMin,
         uint256 wethMin,
-        address to,
-        uint256 deadline,
-        GoatTypes.InitParams memory initParams
-    ) external nonReentrant ensure(deadline) returns (uint256, uint256, uint256) {
+        GoatTypes.InitParams memory initParams,
+        bool isEth
+    ) internal returns (GoatTypes.LocalVariables_AddLiquidity memory vars) {
         if (token == WETH || token == address(0)) {
             revert GoatErrors.WrongToken();
         }
-        GoatTypes.LocalVariables_AddLiquidity memory vars;
-        vars.token = token; // prevent stack too deep error
+
+        vars.token = token;
         (vars.tokenAmount, vars.wethAmount, vars.isNewPair) =
             _addLiquidity(token, tokenDesired, wethDesired, tokenMin, wethMin, initParams);
 
@@ -121,8 +120,25 @@ contract GoatV1Router is ReentrancyGuard {
         } else {
             vars.actualTokenAmount = vars.tokenAmount;
         }
-
+        if (isEth && wethDesired != vars.wethAmountInitial) {
+            revert GoatErrors.InvalidEthAmount();
+        }
         vars.pair = GoatV1Factory(FACTORY).getPool(vars.token);
+    }
+
+    function addLiquidity(
+        address token,
+        uint256 tokenDesired,
+        uint256 wethDesired,
+        uint256 tokenMin,
+        uint256 wethMin,
+        address to,
+        uint256 deadline,
+        GoatTypes.InitParams memory initParams
+    ) external nonReentrant ensure(deadline) returns (uint256, uint256, uint256) {
+        GoatTypes.LocalVariables_AddLiquidity memory vars = _ensurePoolAndPrepareLiqudityParameters(
+            token, tokenDesired, wethDesired, tokenMin, wethMin, initParams, false
+        );
 
         IERC20(vars.token).safeTransferFrom(msg.sender, vars.pair, vars.actualTokenAmount);
         if (vars.wethAmountInitial != 0) {
@@ -141,27 +157,8 @@ contract GoatV1Router is ReentrancyGuard {
         uint256 deadline,
         GoatTypes.InitParams memory initParams
     ) external payable ensure(deadline) returns (uint256, uint256, uint256) {
-        if (token == WETH || token == address(0)) {
-            revert GoatErrors.WrongToken();
-        }
-        GoatTypes.LocalVariables_AddLiquidity memory vars;
-        vars.token = token; // prevent stack too deep error
-        (vars.tokenAmount, vars.wethAmount, vars.isNewPair) =
-            _addLiquidity(token, tokenDesired, msg.value, tokenMin, ethMin, initParams);
-        vars.wethAmountInitial = vars.isNewPair ? initParams.initialEth : vars.wethAmount;
-
-        if (vars.isNewPair) {
-            // only for the first time
-            vars.actualTokenAmount = GoatLibrary.getActualBootstrapTokenAmount(
-                initParams.virtualEth, initParams.bootstrapEth, vars.wethAmountInitial, initParams.initialTokenMatch
-            );
-        } else {
-            vars.actualTokenAmount = vars.tokenAmount;
-        }
-        if (msg.value != vars.wethAmountInitial) {
-            revert GoatErrors.InvalidEthAmount();
-        }
-        vars.pair = GoatV1Factory(FACTORY).getPool(vars.token);
+        GoatTypes.LocalVariables_AddLiquidity memory vars =
+            _ensurePoolAndPrepareLiqudityParameters(token, tokenDesired, msg.value, tokenMin, ethMin, initParams, true);
         IERC20(token).safeTransferFrom(msg.sender, vars.pair, vars.actualTokenAmount);
         if (vars.wethAmountInitial != 0) {
             IWETH(WETH).deposit{value: vars.wethAmountInitial}();
