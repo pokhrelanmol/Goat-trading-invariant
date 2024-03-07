@@ -2,9 +2,9 @@
 pragma solidity 0.8.19;
 
 import "forge-std/Test.sol";
-import {console2} from "forge-std/console2.sol";
 
-import "../../../contracts/library/GoatLibrary.sol";
+// Local imports
+import {GoatLibrary} from "../../../contracts/library/GoatLibrary.sol";
 
 struct Users {
     address whale;
@@ -48,7 +48,7 @@ contract GoatLibraryTest is Test {
         uint256 reserveTokenForAmm = 250e18;
         uint256 virtualToken = 250e18;
 
-        uint256 amountTokenOut = GoatLibrary._getTokenAmountOut(
+        uint256 amountTokenOut = GoatLibrary.getTokenAmountOut(
             amountWethIn,
             virtualEth,
             reserveEth,
@@ -63,7 +63,7 @@ contract GoatLibraryTest is Test {
         amountWethIn = 5e18 + ((99 * 5e18) / 10000);
         // this is approx value
         expectedTokenAmountOut = 333300000000000000000;
-        amountTokenOut = GoatLibrary._getTokenAmountOut(
+        amountTokenOut = GoatLibrary.getTokenAmountOut(
             amountWethIn,
             virtualEth,
             reserveEth,
@@ -88,7 +88,7 @@ contract GoatLibraryTest is Test {
         uint256 reserveToken = 750e18 - amountTokenIn;
         uint256 virtualToken = 250e18;
 
-        uint256 amountWethOut = GoatLibrary._getWethAmountOut(
+        uint256 amountWethOut = GoatLibrary.getWethAmountOut(
             amountTokenIn, reserveEth, reserveToken, virtualEth, virtualToken, vestingUntil
         );
         assertApproxEqRel(amountWethOut, expectedWethOut, 1e14);

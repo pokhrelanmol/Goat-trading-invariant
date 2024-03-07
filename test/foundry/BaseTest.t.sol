@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {GoatV1Pair} from "../../contracts/exchange/GoatV1Pair.sol";
 import {GoatV1Factory} from "../../contracts/exchange/GoatV1Factory.sol";
 import {GoatV1Router} from "../../contracts/periphery/GoatRouterV1.sol";
@@ -76,9 +76,9 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        addLiquidityParams(true, true);
         addLiqParams.initParams.initialEth = 10e18; // set all weth
-        actualTokenAmountToSend = router.getActualAmountNeeded(
+        actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -102,9 +102,9 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity, uint256 actualTokenAmountToSend)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
+        addLiquidityParams(true, true);
         addLiqParams.initParams.initialEth = 10e18; // set all weth
-        actualTokenAmountToSend = router.getActualAmountNeeded(
+        actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -128,8 +128,8 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        addLiquidityParams(true, true);
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -153,8 +153,8 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        addLiquidityParams(true, true);
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -178,8 +178,8 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        addLiquidityParams(true, false);
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -202,8 +202,8 @@ abstract contract BaseTest is Test {
         internal
         returns (uint256 tokenAmtUsed, uint256 wethAmtUsed, uint256 liquidity)
     {
-        BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        addLiquidityParams(true, false);
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,

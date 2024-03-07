@@ -342,7 +342,7 @@ contract GoatV1RouterTest is BaseTest {
 
     function testRevertIfNotEnoughTokenIsApprovedToRouter() public {
         BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -365,7 +365,7 @@ contract GoatV1RouterTest is BaseTest {
 
     function testRevertIfNotEnoughEthIsSent() public {
         BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, true);
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -388,7 +388,7 @@ contract GoatV1RouterTest is BaseTest {
     function testRevertIfInitialAmountIsSetToZeroButSomeEthIsSent() public {
         BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false); // no initial eth
         addLiqParams.initParams.initialEth = 0;
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -413,7 +413,7 @@ contract GoatV1RouterTest is BaseTest {
     function testRevertIfAddLiquidityInPresalePeriod() public {
         BaseTest.AddLiquidityParams memory addLiqParams = addLiquidityParams(true, false);
 
-        uint256 actualTokenAmountToSend = router.getActualAmountNeeded(
+        uint256 actualTokenAmountToSend = router.getActualBootstrapTokenAmount(
             addLiqParams.initParams.virtualEth,
             addLiqParams.initParams.bootstrapEth,
             addLiqParams.initParams.initialEth,
@@ -1377,14 +1377,12 @@ contract GoatV1RouterTest is BaseTest {
 
     function testSwapTokenToWethIsAllowedToEveryoneAfterVestingDuration() public {
         _addLiquidityAndConvertToAmm();
-        console2.log(block.timestamp);
         uint256 timestamp = block.timestamp + 31 days;
         vm.warp(timestamp); // forward time to end vesting
         // Now swap token to weth
         token.mint(swapper, 100e18);
         vm.startPrank(swapper);
         token.approve(address(router), 100e18);
-        console2.log("here");
         router.swapExactTokensForWeth(
             100e18, // amountIn
             0, // no slippage protection for now

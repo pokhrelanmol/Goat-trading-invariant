@@ -18,6 +18,8 @@ bin
 # Forge Files
 forge_cache/
 out/
+broadcast/
+.gas-snapshot
 
 # local files
 DesignPrinciples.md

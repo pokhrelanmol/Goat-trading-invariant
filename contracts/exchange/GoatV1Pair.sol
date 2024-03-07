@@ -2,22 +2,19 @@
 pragma solidity 0.8.19;
 
 // library imports
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 // local imports
-import "../library/GoatErrors.sol";
-import "../library/GoatTypes.sol";
-import "./GoatV1ERC20.sol";
+import {GoatErrors} from "../library/GoatErrors.sol";
+import {GoatTypes} from "../library/GoatTypes.sol";
+import {GoatV1ERC20} from "./GoatV1ERC20.sol";
 
 // interfaces
-import "../interfaces/IGoatV1Factory.sol";
-
-// TODO: remove this later
-import {console2} from "forge-std/Test.sol";
+import {IGoatV1Factory} from "../interfaces/IGoatV1Factory.sol";
 
 contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -69,6 +66,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _genesis = uint32(block.timestamp);
     }
 
+    /* ----------------------------- EXTERNAL FUNCTIONS ----------------------------- */
     function initialize(address token, address weth, string memory baseName, GoatTypes.InitParams memory params)
         external
     {
@@ -84,90 +82,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _initialTokenMatch = params.initialTokenMatch;
         _virtualEth = params.virtualEth;
         _bootstrapEth = params.bootstrapEth;
-    }
-
-    function _update(uint256 balanceEth, uint256 balanceToken, bool fromSwap) internal {
-        // Update token reserves and other necessary data
-        if (fromSwap) {
-            _reserveEth = uint112(balanceEth);
-            _reserveToken = uint112(balanceToken);
-        } else {
-            _reserveEth = uint112(balanceEth - (_pendingLiquidityFees + _pendingProtocolFees));
-            _reserveToken = uint112(balanceToken);
-        }
-    }
-
-    function _handleFees(uint256 amountWethIn, uint256 amountWethOut, bool isPresale)
-        internal
-        returns (uint256 feesCollected, uint256 feesLp)
-    {
-        // here either amountWethIn or amountWethOut will be zero
-
-        // fees collected will be 100 bps of the weth amount
-        if (amountWethIn != 0) {
-            feesCollected = (amountWethIn * 99) / 10000;
-        } else {
-            feesCollected = (amountWethOut * 10000) / 9901 - amountWethOut;
-        }
-        // lp fess is fixed 40% of the fees collected of total 100 bps
-        feesLp = (feesCollected * 40) / 100;
-
-        uint256 pendingProtocolFees = _pendingProtocolFees;
-
-        // lp fees only updated if it's not a presale
-        if (!isPresale) {
-            _pendingLiquidityFees += uint112(feesLp);
-            // update fees per token stored
-            feesPerTokenStored += uint184((feesLp * 1e18) / totalSupply());
-        }
-
-        pendingProtocolFees += feesCollected - feesLp;
-
-        IGoatV1Factory _factory = IGoatV1Factory(factory);
-        uint256 minCollectableFees = _factory.minimumCollectableFees();
-        address treasury = _factory.treasury();
-
-        if (pendingProtocolFees > minCollectableFees) {
-            IERC20(_weth).safeTransfer(treasury, pendingProtocolFees);
-            pendingProtocolFees = 0;
-        }
-        _pendingProtocolFees = uint72(pendingProtocolFees);
-    }
-
-    function _handleMevCheck(bool isBuy) internal returns (uint32 lastTrade) {
-        // @note  Known bug for chains that have block time less than 2 second
-        uint8 swapType = isBuy ? 1 : 2;
-        uint32 timestamp = uint32(block.timestamp);
-        lastTrade = _lastTrade;
-        if (lastTrade < timestamp) {
-            lastTrade = timestamp;
-        } else if (lastTrade == timestamp) {
-            lastTrade = timestamp + swapType;
-        } else if (lastTrade == timestamp + 1) {
-            if (swapType == 2) {
-                revert GoatErrors.MevDetected1();
-            }
-        } else if (lastTrade == timestamp + 2) {
-            if (swapType == 1) {
-                revert GoatErrors.MevDetected2();
-            }
-        } else {
-            // make it bullet proof
-            revert GoatErrors.MevDetected();
-        }
-        // update last trade
-        _lastTrade = lastTrade;
-    }
-
-    function _updatePresale(address user, uint256 amount, bool isBuy) internal {
-        //
-        if (isBuy) {
-            unchecked {
-                _presaleBalances[user] += amount;
-            }
-        } else {
-            _presaleBalances[user] -= amount;
-        }
     }
 
     /**
@@ -248,32 +162,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _update(balanceEth, balanceToken, false);
 
         emit Mint(msg.sender, amountWeth, amountToken);
-    }
-
-    function _updateInitialLpInfo(uint256 liquidity, uint256 wethAmt, address lp, bool isBurn, bool internalBurn)
-        internal
-    {
-        GoatTypes.InitialLPInfo memory info = _initialLPInfo;
-
-        if (internalBurn) {
-            // update from from swap when pool converts to an amm
-            info.fractionalBalance = uint112(liquidity) / 4;
-        } else if (isBurn) {
-            if (lp == info.liquidityProvider) {
-                info.lastWithdraw = uint32(block.timestamp);
-                info.withdrawalLeft -= 1;
-            }
-        } else {
-            info.fractionalBalance = uint112(((info.fractionalBalance * info.withdrawalLeft) + liquidity) / 4);
-            info.withdrawalLeft = 4;
-            info.liquidityProvider = lp;
-            if (wethAmt != 0) {
-                info.initialWethAdded = uint104(wethAmt);
-            }
-        }
-
-        // Update initial liquidity provider info
-        _initialLPInfo = info;
     }
 
     /**
@@ -610,6 +498,139 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _update(_reserveEth, tokenBalance, false);
     }
 
+    /**
+     * @notice Withdraws the fees accrued to the address `to`.
+     * @dev Transfers the accumulated fees in weth of the liquidty proivder
+     * @param to The address to which the fees will be withdrawn.
+     * Post-conditions:
+     * - The `feesPerTokenPaid` should reflect the latest `feesPerTokenStored` value for the address `to`.
+     * - The `lpFees` owed to the address `to` are reset to 0.
+     * - The `_pendingLiquidityFees` state variable is decreased by the amount of fees withdrawn.
+     */
+    function withdrawFees(address to) external {
+        uint256 totalFees = _earned(to, feesPerTokenStored);
+
+        if (totalFees != 0) {
+            feesPerTokenPaid[to] = feesPerTokenStored;
+            lpFees[to] = 0;
+            _pendingLiquidityFees -= uint112(totalFees);
+            IERC20(_weth).safeTransfer(to, totalFees);
+        }
+        // is there a need to check if weth balance is in sync with reserve and fees?
+    }
+
+    /* ----------------------------- INTERNAL FUNCTIONS ----------------------------- */
+
+    function _update(uint256 balanceEth, uint256 balanceToken, bool fromSwap) internal {
+        // Update token reserves and other necessary data
+        if (fromSwap) {
+            _reserveEth = uint112(balanceEth);
+            _reserveToken = uint112(balanceToken);
+        } else {
+            _reserveEth = uint112(balanceEth - (_pendingLiquidityFees + _pendingProtocolFees));
+            _reserveToken = uint112(balanceToken);
+        }
+    }
+
+    function _updateInitialLpInfo(uint256 liquidity, uint256 wethAmt, address lp, bool isBurn, bool internalBurn)
+        internal
+    {
+        GoatTypes.InitialLPInfo memory info = _initialLPInfo;
+
+        if (internalBurn) {
+            // update from from swap when pool converts to an amm
+            info.fractionalBalance = uint112(liquidity) / 4;
+        } else if (isBurn) {
+            if (lp == info.liquidityProvider) {
+                info.lastWithdraw = uint32(block.timestamp);
+                info.withdrawalLeft -= 1;
+            }
+        } else {
+            info.fractionalBalance = uint112(((info.fractionalBalance * info.withdrawalLeft) + liquidity) / 4);
+            info.withdrawalLeft = 4;
+            info.liquidityProvider = lp;
+            if (wethAmt != 0) {
+                info.initialWethAdded = uint104(wethAmt);
+            }
+        }
+
+        // Update initial liquidity provider info
+        _initialLPInfo = info;
+    }
+
+    function _handleFees(uint256 amountWethIn, uint256 amountWethOut, bool isPresale)
+        internal
+        returns (uint256 feesCollected, uint256 feesLp)
+    {
+        // here either amountWethIn or amountWethOut will be zero
+
+        // fees collected will be 99 bps of the weth amount
+        if (amountWethIn != 0) {
+            feesCollected = (amountWethIn * 99) / 10000;
+        } else {
+            feesCollected = (amountWethOut * 10000) / 9901 - amountWethOut;
+        }
+        // lp fess is fixed 40% of the fees collected of total 99 bps
+        feesLp = (feesCollected * 40) / 100;
+
+        uint256 pendingProtocolFees = _pendingProtocolFees;
+
+        // lp fees only updated if it's not a presale
+        if (!isPresale) {
+            _pendingLiquidityFees += uint112(feesLp);
+            // update fees per token stored
+            feesPerTokenStored += uint184((feesLp * 1e18) / totalSupply());
+        }
+
+        pendingProtocolFees += feesCollected - feesLp;
+
+        IGoatV1Factory _factory = IGoatV1Factory(factory);
+        uint256 minCollectableFees = _factory.minimumCollectableFees();
+        address treasury = _factory.treasury();
+
+        if (pendingProtocolFees > minCollectableFees) {
+            IERC20(_weth).safeTransfer(treasury, pendingProtocolFees);
+            pendingProtocolFees = 0;
+        }
+        _pendingProtocolFees = uint72(pendingProtocolFees);
+    }
+
+    function _handleMevCheck(bool isBuy) internal returns (uint32 lastTrade) {
+        // @note  Known bug for chains that have block time less than 2 second
+        uint8 swapType = isBuy ? 1 : 2;
+        uint32 timestamp = uint32(block.timestamp);
+        lastTrade = _lastTrade;
+        if (lastTrade < timestamp) {
+            lastTrade = timestamp;
+        } else if (lastTrade == timestamp) {
+            lastTrade = timestamp + swapType;
+        } else if (lastTrade == timestamp + 1) {
+            if (swapType == 2) {
+                revert GoatErrors.MevDetected1();
+            }
+        } else if (lastTrade == timestamp + 2) {
+            if (swapType == 1) {
+                revert GoatErrors.MevDetected2();
+            }
+        } else {
+            // make it bullet proof
+            revert GoatErrors.MevDetected();
+        }
+        // update last trade
+        _lastTrade = lastTrade;
+    }
+
+    function _updatePresale(address user, uint256 amount, bool isBuy) internal {
+        //
+        if (isBuy) {
+            unchecked {
+                _presaleBalances[user] += amount;
+            }
+        } else {
+            _presaleBalances[user] -= amount;
+        }
+    }
+
     function _burnLiquidityAndConvertToAmm(uint256 actualEthReserve, uint256 actualTokenReserve) internal {
         address initialLiquidityProvider = _initialLPInfo.liquidityProvider;
 
@@ -639,18 +660,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         _burnLiquidityAndConvertToAmm(initialReserveEth, initialReserveToken);
     }
 
-    function withdrawFees(address to) external {
-        uint256 totalFees = _earned(to, feesPerTokenStored);
-
-        if (totalFees != 0) {
-            feesPerTokenPaid[to] = feesPerTokenStored;
-            lpFees[to] = 0;
-            _pendingLiquidityFees -= uint112(totalFees);
-            IERC20(_weth).safeTransfer(to, totalFees);
-        }
-        // is there a need to check if weth balance is in sync with reserve and fees?
-    }
-
     function _getVirtualToken(uint256 virtualEth, uint256 bootstrapEth, uint256 initialTokenMatch)
         internal
         pure
@@ -668,7 +677,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         uint256 initialEth,
         uint256 initialTokenMatch
     ) internal pure returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) {
-        // @note I have not handled precision loss here. Make sure if I need to round it up by 1.
         uint256 k = virtualEth * initialTokenMatch;
         tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
         tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
@@ -683,15 +691,11 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 tokenAmtForPresale = 0;
             }
         }
-
-        // @note use ceil for checking token amount in
-        // if (tokenAmtForPresale != 0) {
-        //     tokenAmtForPresale += 1;
-        // }
-        // tokenAmtForAmm += 1;
     }
 
-    // handle initial liquidity provider checks and update locked if lp is transferred
+    /**
+     * @dev handle initial liquidity provider checks and update locked if lp is transferred
+     */
     function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
         GoatTypes.InitialLPInfo memory lpInfo = _initialLPInfo;
         if (to == lpInfo.liquidityProvider) revert GoatErrors.TransferToInitialLpRestricted();
@@ -744,6 +748,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         return lpFees[lp] + feesAccrued;
     }
 
+    /* ----------------------------- VIEW FUNCTIONS ----------------------------- */
     function earned(address lp) external view returns (uint256) {
         return _earned(lp, feesPerTokenStored);
     }
