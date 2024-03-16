@@ -214,7 +214,7 @@ contract GoatV1Router is ReentrancyGuard {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) public pure returns (uint256 actualTokenAmount) {
+    ) public view returns (uint256 actualTokenAmount) {
         return GoatLibrary.getActualBootstrapTokenAmount(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
     }
 

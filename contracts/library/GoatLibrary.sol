@@ -3,38 +3,48 @@ pragma solidity 0.8.19;
 
 // Local Imports
 import {GoatTypes} from "./GoatTypes.sol";
+import {console2} from "forge-std/Test.sol";
 import {GoatErrors} from "./GoatErrors.sol";
 
 library GoatLibrary {
     ///@notice given some amount of asset and pair reserves,
     /// @return amountB an equivalent amount of the other asset
-    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) internal pure returns (uint256 amountB) {
+    function quote(
+        uint256 amountA,
+        uint256 reserveA,
+        uint256 reserveB
+    ) internal pure returns (uint256 amountB) {
         if (amountA == 0) revert GoatErrors.InsufficientInputAmount();
-        if (reserveA == 0 || reserveB == 0) revert GoatErrors.InsufficientLiquidity();
+        if (reserveA == 0 || reserveB == 0)
+            revert GoatErrors.InsufficientLiquidity();
 
         amountB = (amountA * reserveB) / reserveA;
     }
 
-    function getTokenAmountOutAmm(uint256 amountWethIn, uint256 reserveEth, uint256 reserveToken)
-        internal
-        pure
-        returns (uint256 amountTokenOut)
-    {
+    function getTokenAmountOutAmm(
+        uint256 amountWethIn,
+        uint256 reserveEth,
+        uint256 reserveToken
+    ) internal view returns (uint256 amountTokenOut) {
         uint256 actualWethIn = amountWethIn * 9901;
 
         uint256 numerator = actualWethIn * reserveToken;
         uint256 denominator = reserveEth * 10000 + actualWethIn;
 
         amountTokenOut = numerator / denominator;
+        console2.log("numerator", numerator);
+        console2.log("denominator", denominator);
     }
 
-    function getTokenAmountForAmm(uint256 virtualEth, uint256 bootstrapEth, uint256 initialTokenMatch)
-        internal
-        pure
-        returns (uint256 tokenAmtForAmm)
-    {
+    function getTokenAmountForAmm(
+        uint256 virtualEth,
+        uint256 bootstrapEth,
+        uint256 initialTokenMatch
+    ) internal view returns (uint256 tokenAmtForAmm) {
         uint256 k = virtualEth * initialTokenMatch;
-        tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
+        tokenAmtForAmm =
+            ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) *
+            bootstrapEth;
     }
 
     function getTokenAmountOutPresale(
@@ -45,20 +55,24 @@ library GoatLibrary {
         uint256 reserveToken,
         uint256 virtualToken,
         uint256 reserveTokenForAmm
-    ) internal pure returns (uint256 amountTokenOut) {
+    ) internal view returns (uint256 amountTokenOut) {
+        console2.log("amountWethIn", amountWethIn);
         uint256 actualWethIn = (amountWethIn * 9901) / 10000;
 
         uint256 wethForAmm;
         uint256 wethForPresale;
         uint256 amountTokenOutPresale;
         uint256 amountTokenOutAmm;
-
         if (reserveEth + actualWethIn > bootStrapEth) {
             wethForAmm = (reserveEth + actualWethIn) - bootStrapEth;
         }
+        console2.log("actualWethIn", actualWethIn);
+        console2.log("wethForAmm", wethForAmm);
         wethForPresale = (actualWethIn - wethForAmm) * 10000;
         uint256 numerator = wethForPresale * (virtualToken + reserveToken);
-        uint256 denominator = (reserveEth + virtualEth) * 10000 + wethForPresale;
+        uint256 denominator = (reserveEth + virtualEth) *
+            10000 +
+            wethForPresale;
         amountTokenOutPresale = numerator / denominator;
 
         if (wethForAmm > 0) {
@@ -96,11 +110,18 @@ library GoatLibrary {
             vars.actualWethIn = vars.actualWethIn / 10000;
 
             if (reserveEth + vars.actualWethIn > bootStrapEth) {
-                vars.wethForAmm = (reserveEth + vars.actualWethIn) - bootStrapEth;
+                vars.wethForAmm =
+                    (reserveEth + vars.actualWethIn) -
+                    bootStrapEth;
             }
             vars.wethForPresale = (vars.actualWethIn - vars.wethForAmm) * 10000;
-            vars.numerator = vars.wethForPresale * (virtualToken + reserveToken);
-            vars.denominator = (reserveEth + virtualEth) * 10000 + vars.wethForPresale;
+            vars.numerator =
+                vars.wethForPresale *
+                (virtualToken + reserveToken);
+            vars.denominator =
+                (reserveEth + virtualEth) *
+                10000 +
+                vars.wethForPresale;
             vars.amountTokenOutPresale = vars.numerator / vars.denominator;
 
             if (vars.wethForAmm > 0) {
@@ -113,13 +134,14 @@ library GoatLibrary {
         amountTokenOut = vars.amountTokenOutPresale + vars.amountTokenOutAmm;
     }
 
-    function getWethAmountOutAmm(uint256 amountTokenIn, uint256 reserveEth, uint256 reserveToken)
-        internal
-        pure
-        returns (uint256 amountWethOut)
-    {
+    function getWethAmountOutAmm(
+        uint256 amountTokenIn,
+        uint256 reserveEth,
+        uint256 reserveToken
+    ) internal pure returns (uint256 amountWethOut) {
         if (amountTokenIn == 0) revert GoatErrors.InsufficientInputAmount();
-        if (reserveEth == 0 || reserveToken == 0) revert GoatErrors.InsufficientLiquidity();
+        if (reserveEth == 0 || reserveToken == 0)
+            revert GoatErrors.InsufficientLiquidity();
         amountTokenIn = amountTokenIn * 10000;
         uint256 numerator;
         uint256 denominator;
@@ -140,7 +162,8 @@ library GoatLibrary {
         uint256 virtualToken
     ) internal pure returns (uint256 amountWethOut) {
         if (amountTokenIn == 0) revert GoatErrors.InsufficientInputAmount();
-        if (reserveEth == 0 || reserveToken == 0) revert GoatErrors.InsufficientLiquidity();
+        if (reserveEth == 0 || reserveToken == 0)
+            revert GoatErrors.InsufficientLiquidity();
         amountTokenIn = amountTokenIn * 10000;
         uint256 numerator;
         uint256 denominator;
@@ -163,7 +186,8 @@ library GoatLibrary {
         uint32 vestingUntil
     ) internal pure returns (uint256 amountWethOut) {
         if (amountTokenIn == 0) revert GoatErrors.InsufficientInputAmount();
-        if (reserveEth == 0 || reserveToken == 0) revert GoatErrors.InsufficientLiquidity();
+        if (reserveEth == 0 || reserveToken == 0)
+            revert GoatErrors.InsufficientLiquidity();
         amountTokenIn = amountTokenIn * 10000;
         uint256 numerator;
         uint256 denominator;
@@ -187,9 +211,17 @@ library GoatLibrary {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) internal pure returns (uint256 actualTokenAmount) {
-        (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) =
-            _getTokenAmountsForPresaleAndAmm(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
+    ) internal view returns (uint256 actualTokenAmount) {
+        (
+            uint256 tokenAmtForPresale,
+            uint256 tokenAmtForAmm
+        ) = _getTokenAmountsForPresaleAndAmm(
+                virtualEth,
+                bootstrapEth,
+                initialEth,
+                initialTokenMatch
+            );
+        console2.log("TokenAmountForAmm", tokenAmtForAmm);
         actualTokenAmount = tokenAmtForPresale + tokenAmtForAmm;
     }
 
@@ -198,9 +230,17 @@ library GoatLibrary {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) internal pure returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) {
-        (tokenAmtForPresale, tokenAmtForAmm) =
-            _getTokenAmountsForPresaleAndAmm(virtualEth, bootstrapEth, initialEth, initialTokenMatch);
+    )
+        internal
+        pure
+        returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm)
+    {
+        (tokenAmtForPresale, tokenAmtForAmm) = _getTokenAmountsForPresaleAndAmm(
+            virtualEth,
+            bootstrapEth,
+            initialEth,
+            initialTokenMatch
+        );
     }
 
     function _getTokenAmountsForPresaleAndAmm(
@@ -208,10 +248,18 @@ library GoatLibrary {
         uint256 bootstrapEth,
         uint256 initialEth,
         uint256 initialTokenMatch
-    ) private pure returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm) {
+    )
+        private
+        pure
+        returns (uint256 tokenAmtForPresale, uint256 tokenAmtForAmm)
+    {
         uint256 k = virtualEth * initialTokenMatch;
-        tokenAmtForPresale = initialTokenMatch - (k / (virtualEth + bootstrapEth));
-        tokenAmtForAmm = ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) * bootstrapEth;
+        tokenAmtForPresale =
+            initialTokenMatch -
+            (k / (virtualEth + bootstrapEth));
+        tokenAmtForAmm =
+            ((k / (virtualEth + bootstrapEth)) / (virtualEth + bootstrapEth)) *
+            bootstrapEth;
 
         if (initialEth != 0) {
             uint256 numerator = (initialEth * initialTokenMatch);
@@ -232,7 +280,8 @@ library GoatLibrary {
         // scale by 10000 to avoid rounding errors
         uint256 actualWethOut = ((wethAmountOut * 10000) / 9901) * 10000;
 
-        if (actualWethOut > reserveEth) revert GoatErrors.InsufficientLiquidity();
+        if (actualWethOut > reserveEth)
+            revert GoatErrors.InsufficientLiquidity();
         uint256 numerator;
         uint256 denominator;
         if (vestingUntil == type(uint32).max) {

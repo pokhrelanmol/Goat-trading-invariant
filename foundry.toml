@@ -6,3 +6,11 @@ test = 'test/foundry'
 cache_path = 'forge_cache'
 [rpc_endpoints]
 optimism_testnet = "${RPC_OPTIMISM}"
+
+[fuzz]
+seed = "0x1"
+
+[invariant]
+runs = 256
+depth = 32
+fail_on_revert = true
