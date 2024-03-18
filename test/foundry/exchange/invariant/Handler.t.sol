@@ -56,6 +56,9 @@ contract Handler is Test {
     address[] lps;
     SwapperInfo[] swappers;
 
+    function setUp() public {
+        vm.warp(300 days);
+    }
     constructor(
         GoatV1Factory _factory,
         MockERC20 _token,
@@ -448,13 +451,10 @@ contract Handler is Test {
 
         expectedDeltaWethReserve = int256(amountWethOut);
         expectedDeltaTokenReserve = int256(amountTokenOut);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 2 days);
         vm.startPrank(liquidityProvider);
         console2.log("Timestamp", block.timestamp);
-        console2.log(
-            "Block timestamp + 2 days test",
-            block.timestamp + 30 days
-        );
+        console2.log("Block timestamp + 2 days test", block.timestamp + 2 days);
         pair.transfer(address(pair), liquidity);
         pair.burn(liquidityProvider);
         vm.stopPrank();
