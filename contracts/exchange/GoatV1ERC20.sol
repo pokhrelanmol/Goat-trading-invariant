@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
+import {console2} from "forge-std/Test.sol";
 
 contract GoatV1ERC20 {
     // Token metadata
@@ -23,17 +24,29 @@ contract GoatV1ERC20 {
 
     // Events
     event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 value
+    );
 
     function _mint(address _to, uint256 _value) internal {
         uint32 lockUntil;
         if (_value > _totalSupply) {
             lockUntil = uint32(block.timestamp + _TWO_DAYS);
         } else {
-            lockUntil = uint32(block.timestamp + ((_value * _TWO_DAYS) / _totalSupply));
+            lockUntil = uint32(
+                block.timestamp + ((_value * _TWO_DAYS) / _totalSupply)
+            );
         }
 
+        console2.log("Block timestamp", block.timestamp);
+        console2.log("Locked Until", lockUntil);
+
         if (lockUntil > _locked[_to]) {
+            console2.log("Block timestamp", block.timestamp);
+            console2.log("Locked Until", lockUntil);
+
             _locked[_to] = lockUntil;
         }
 
@@ -49,7 +62,11 @@ contract GoatV1ERC20 {
         emit Transfer(_from, address(0), _value);
     }
 
-    function _approve(address _owner, address _spender, uint256 _value) internal {
+    function _approve(
+        address _owner,
+        address _spender,
+        uint256 _value
+    ) internal {
         _allowances[_owner][_spender] = _value;
         emit Approval(_owner, _spender, _value);
     }
@@ -61,12 +78,19 @@ contract GoatV1ERC20 {
         emit Transfer(_from, _to, _value);
     }
 
-    function transfer(address _to, uint256 _value) public returns (bool success) {
+    function transfer(
+        address _to,
+        uint256 _value
+    ) public returns (bool success) {
         _transfer(msg.sender, _to, _value);
         return true;
     }
 
-    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {
+    function transferFrom(
+        address _from,
+        address _to,
+        uint256 _value
+    ) public returns (bool success) {
         if (_allowances[_from][msg.sender] != type(uint256).max) {
             _allowances[_from][msg.sender] -= _value;
         }
@@ -74,7 +98,10 @@ contract GoatV1ERC20 {
         return true;
     }
 
-    function approve(address _spender, uint256 _value) public returns (bool success) {
+    function approve(
+        address _spender,
+        uint256 _value
+    ) public returns (bool success) {
         _approve(msg.sender, _spender, _value);
         return true;
     }
@@ -84,11 +111,18 @@ contract GoatV1ERC20 {
     }
 
     // Get the value of tokens that an owner allowance to a spender
-    function allowance(address _owner, address _spender) public view returns (uint256 remaining) {
+    function allowance(
+        address _owner,
+        address _spender
+    ) public view returns (uint256 remaining) {
         return _allowances[_owner][_spender];
     }
 
-    function _beforeTokenTransfer(address _from, address _to, uint256 _value) internal virtual {
+    function _beforeTokenTransfer(
+        address _from,
+        address _to,
+        uint256 _value
+    ) internal virtual {
         // handle initial liquidity provider restrictions
     }
 
