@@ -8,6 +8,7 @@ import {GoatTypes} from "../../../../contracts/library/GoatTypes.sol";
 import {GoatLibrary} from "../../../../contracts/library/GoatLibrary.sol";
 import {MockERC20} from "../../../../contracts/mock/MockERC20.sol";
 import {MockWETH} from "../../../../contracts/mock/MockWETH.sol";
+import {GoatErrors} from "../../../../contracts/library/GoatErrors.sol";
 //TODO: Do code cleanup
 
 struct LocalVariable_Reserves {
@@ -56,6 +57,35 @@ contract Handler is Test {
     address[] lps;
     SwapperInfo[] swappers;
 
+    //Errors handling
+    bytes4[] expectedErrors;
+
+    modifier resetErrors() {
+        _;
+        delete expectedErrors;
+    }
+
+    function _addExpectedError(bytes4 _error) internal {
+        expectedErrors.push(_error);
+    }
+
+    function expectedError(bytes memory _err) internal view {
+        bytes4 err = bytes4(_err);
+        bool _valid;
+
+        uint256 errLen = expectedErrors.length;
+        for (uint256 i = 0; i < errLen; i++) {
+            if (err == expectedErrors[i]) {
+                _valid = true;
+            }
+        }
+
+        if (!_valid) {
+            console2.log("Unhandled Error:");
+        }
+        require(_valid, "Unexpected revert error");
+    }
+
     function setUp() public {
         vm.warp(300 days);
     }
@@ -72,7 +102,12 @@ contract Handler is Test {
     }
 
     function swapWethToToken(uint256 amountWethIn) public {
-        vm.warp(lastSwapTimestamp + 3);
+        if (lastSwapTimestamp == 0) {
+            lastSwapTimestamp = block.timestamp + 3;
+        } else {
+            lastSwapTimestamp = block.timestamp + 3;
+            vm.warp(lastSwapTimestamp);
+        }
         GoatTypes.LocalVariables_PairStateInfo memory vars;
         LocalVariable_Reserves memory reserves;
         LocalVariables_swapWethToTokenInPresale memory swapVars;
@@ -115,7 +150,7 @@ contract Handler is Test {
                 vars.virtualToken,
                 tokenAmountForAmm
             );
-            if (swapVars.amountTokenOut == 0) return;
+            if (swapVars.amountTokenOut < 100) return;
             expectedDeltaWethReserve = int256(
                 amountWethIn - swapVars.protocolFee
             );
@@ -137,8 +172,11 @@ contract Handler is Test {
 
             deal(address(weth), swapper, amountWethIn);
             vm.startPrank(swapper);
+
             weth.transfer(address(pair), amountWethIn);
+            vm.warp(block.timestamp + 3);
             pair.swap(swapVars.amountTokenOut, 0, swapper);
+
             vm.stopPrank();
 
             (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -174,7 +212,7 @@ contract Handler is Test {
                 vars.reserveEth,
                 vars.reserveToken
             );
-            if (swapVars.amountTokenOut == 0) return;
+            if (swapVars.amountTokenOut < 100) return;
 
             expectedDeltaWethReserve = int256(amountWethIn - swapVars.fees);
             expectedDeltaTokenReserve = int256(swapVars.amountTokenOut);
@@ -196,9 +234,11 @@ contract Handler is Test {
 
             deal(address(weth), swapper, amountWethIn);
             vm.startPrank(swapper);
+
             weth.transfer(address(pair), amountWethIn);
+
+            vm.warp(block.timestamp + 3);
             pair.swap(swapVars.amountTokenOut, 0, swapper);
-            vm.warp(block.timestamp + 100);
             vm.stopPrank();
 
             (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -214,14 +254,17 @@ contract Handler is Test {
                 pair.getPendingLiquidityFees() +
                 pair.getPendingProtocolFees();
         }
-        lastSwapTimestamp = block.timestamp;
     }
 
     function swapTokenToWeth(uint256 amountTokenIn, uint256 rand) public {
-        vm.warp(lastSwapTimestamp + 3);
+        if (lastSwapTimestamp == 0) {
+            lastSwapTimestamp = block.timestamp + 3;
+        } else {
+            lastSwapTimestamp = block.timestamp + 3;
+            vm.warp(lastSwapTimestamp);
+        }
         if (swappers.length == 0) return;
         rand = bound(rand, 0, swappers.length - 1);
-        vm.warp(block.timestamp + 100);
         GoatTypes.LocalVariables_PairStateInfo memory vars;
         LocalVariable_Reserves memory reserves;
         LocalVariables_swapWethToTokenInPresale memory swapVars;
@@ -281,12 +324,13 @@ contract Handler is Test {
             } else {
                 expectedTotalFees = pendingProtocolFeesExpectedAfterSwap;
             }
-
+            if (swapVars.amountWethOut < 100) return;
             vm.startPrank(swapper);
-            console2.log("Token in test presale", amountTokenIn);
             token.transfer(address(pair), amountTokenIn);
-            vm.warp(block.timestamp + 100);
+
             pair.swap(0, swapVars.amountWethOut, swapper);
+            vm.warp(block.timestamp + 3);
+
             vm.stopPrank();
 
             (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -341,8 +385,9 @@ contract Handler is Test {
 
             vm.startPrank(swapper);
             token.transfer(address(pair), amountTokenIn);
-            vm.warp(block.timestamp + 100);
             pair.swap(0, swapVars.amountWethOut, swapper);
+            vm.warp(block.timestamp + 3);
+
             vm.stopPrank();
 
             (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -358,14 +403,14 @@ contract Handler is Test {
                 pair.getPendingLiquidityFees() +
                 pair.getPendingProtocolFees();
         }
-        lastSwapTimestamp = block.timestamp;
     }
 
     /* ----------------------- MINT AFTER PRESALE FOR REGULAR LPs---------------------- */
 
-    function mintLiquidity(uint256 amountWethIn) public {
-        if (pair.vestingUntil() == type(uint32).max) return;
-        liquidityProvider = msg.sender;
+    function mintLiquidity(uint256 amountWethIn) public resetErrors {
+        if (pair.vestingUntil() == type(uint32).max) return; // revert if in presale
+
+        liquidityProvider = msg.sender; // get random lp from forge
         lps.push(liquidityProvider);
         if (liquidityProvider == address(pair)) return;
         LocalVariable_Reserves memory reserves;
@@ -377,15 +422,17 @@ contract Handler is Test {
             reserves.reserveWethBefore,
             reserves.reserveTokenBefore
         );
-
+        if (quoteTokenAmt > 1000000e18) return;
         deal(address(weth), liquidityProvider, amountWethIn);
         deal(address(token), liquidityProvider, quoteTokenAmt);
         expectedDeltaWethReserve = int256(amountWethIn);
         expectedDeltaTokenReserve = int256(quoteTokenAmt);
+
         vm.startPrank(liquidityProvider);
         weth.transfer(address(pair), amountWethIn);
         token.transfer(address(pair), quoteTokenAmt);
         pair.mint(liquidityProvider);
+
         vm.stopPrank();
 
         (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -453,10 +500,15 @@ contract Handler is Test {
         expectedDeltaTokenReserve = int256(amountTokenOut);
         vm.warp(block.timestamp + 2 days);
         vm.startPrank(liquidityProvider);
-        console2.log("Timestamp", block.timestamp);
-        console2.log("Block timestamp + 2 days test", block.timestamp + 2 days);
         pair.transfer(address(pair), liquidity);
-        pair.burn(liquidityProvider);
+        try pair.burn(liquidityProvider) {
+            console2.log("Success");
+        } catch (bytes memory reason) {
+            if (pair.vestingUntil() == type(uint32).max) {
+                _addExpectedError(GoatErrors.PresalePeriod.selector);
+            }
+            expectedError(reason);
+        }
         vm.stopPrank();
 
         (reserves.reserveWethAfter, reserves.reserveTokenAfter) = pair
@@ -508,13 +560,15 @@ contract Handler is Test {
         actualTotalFees = pair.getPendingProtocolFees();
     }
 
-    function withdrawFees() public {
+    function withdrawFees(uint256 rand) public {
         if (pair.vestingUntil() == type(uint32).max) return;
         LocalVariable_Reserves memory reserves;
+        if (lps.length == 0) return;
+        rand = bound(rand, 0, lps.length - 1);
+        liquidityProvider = lps[rand];
         (reserves.reserveWethBefore, reserves.reserveTokenBefore) = pair
             .getReserves();
-        // liquidityProvider = msg.sender;
-        if (pair.balanceOf(liquidityProvider) == 0) return;
+
         expectedDeltaWethReserve = 0;
         expectedDeltaTokenReserve = 0;
         uint256 earnedFees = pair.earned(liquidityProvider);

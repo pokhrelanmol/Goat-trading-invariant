@@ -11,6 +11,6 @@ optimism_testnet = "${RPC_OPTIMISM}"
 seed = "0x1"
 
 [invariant]
-runs = 1000
-depth = 32
+runs = 1500
+depth = 50
 fail_on_revert = true

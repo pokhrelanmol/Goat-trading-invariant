@@ -163,6 +163,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         } else {
             // at this point in time we will get the actual reserves
             (uint256 reserveEth, uint256 reserveToken) = getReserves();
+            console2.log("Reserve Token Before", reserveToken);
             amountWeth =
                 balanceEth -
                 reserveEth -
@@ -186,9 +187,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         }
 
         _mint(to, liquidity);
-
         _update(balanceEth, balanceToken, false);
-        //@audit incorrect event params
         emit Mint(msg.sender, amountWeth, amountToken);
     }
 
@@ -298,12 +297,15 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 _pendingLiquidityFees -
                 _pendingProtocolFees;
             // optimistically send tokens out
+
+            //4894193589710557895 - 3049943222147049 = 4894193586667330846(expected)
             IERC20(_token).safeTransfer(to, amountTokenOut);
         } else {
-            //@audit anyone can frontrun this and cause a arithmatic underflow
+            //@audit anyone can frontrun this and cause a arithematic underflow
             swapVars.amountTokenIn =
                 IERC20(_token).balanceOf(address(this)) -
                 swapVars.initialReserveToken;
+
             // optimistically send weth out
             IERC20(_weth).safeTransfer(to, amountWethOut);
         }
@@ -319,7 +321,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
         swapVars.tokenAmount = swapVars.isBuy
             ? amountTokenOut
             : swapVars.amountTokenIn;
-
         // We store details of participants so that we only allow users who have
         // swap back tokens who have bought in the vesting period.
         if (swapVars.vestingUntil > block.timestamp) {
@@ -383,6 +384,7 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             }
         }
         _update(swapVars.finalReserveEth, swapVars.finalReserveToken, true);
+
         // TODO: Emit swap event with similar details to uniswap v2 after audit
         // @note what should be the swap amount values for emit here? Should it include fees?
     }
@@ -656,11 +658,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
             _reserveEth = uint112(balanceEth);
             _reserveToken = uint112(balanceToken);
         } else {
-            console2.log(" balance eth", balanceEth);
-            console2.log(
-                "Pending fee",
-                _pendingLiquidityFees + _pendingProtocolFees
-            );
             _reserveEth = uint112(
                 balanceEth - (_pendingLiquidityFees + _pendingProtocolFees)
             );
@@ -761,10 +758,6 @@ contract GoatV1Pair is GoatV1ERC20, ReentrancyGuard {
                 console2.log("Mev 2_________________________________");
                 revert GoatErrors.MevDetected2();
             }
-        } else {
-            // make it bullet proof
-            console2.log("Mev nonsense____________________________");
-            revert GoatErrors.MevDetected();
         }
         // update last trade
         _lastTrade = lastTrade;

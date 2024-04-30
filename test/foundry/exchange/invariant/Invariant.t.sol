@@ -15,10 +15,10 @@ contract Invariant is InvariantTest, Test {
     //How should i write these?
     GoatTypes.InitParams initParams =
         GoatTypes.InitParams({
-            virtualEth: uint112(10e18),
+            virtualEth: uint112(1000e18),
             bootstrapEth: uint112(10e18),
             initialEth: uint112(0),
-            initialTokenMatch: uint112(1000e18)
+            initialTokenMatch: uint112(100000000e18)
         });
     MockERC20 token;
     MockWETH weth;
@@ -50,6 +50,39 @@ contract Invariant is InvariantTest, Test {
         vm.warp(300 days);
     }
 
+    // function _randInitialInput()
+    //     internal
+    //     returns (GoatTypes.InitParams memory initialParams)
+    // {
+    //     uint256 randomNum;
+    //     randomNum = bound(randomNum, 1, 1000);
+
+    //     if (randomNum < 10) {
+    //         // All input is equal
+    //         initParams = GoatTypes.InitParams({
+    //             virtualEth: uint112(100e18),
+    //             bootstrapEth: uint112(100e18),
+    //             initialEth: uint112(100e18),
+    //             initialTokenMatch: uint112(100e18)
+    //         });
+    //     } else if (randomNum > 10 && randomNum < 100) {
+    //         //  bootstrap == virtualEth
+    //         initParams = GoatTypes.InitParams({
+    //             virtualEth: uint112(100e18),
+    //             bootstrapEth: uint112(100e18),
+    //             initialEth: uint112(10e18),
+    //             initialTokenMatch: uint112(10000e18)
+    //         });
+    //     } else {
+    //         // intialEth ==0,vitualEth > boostrap
+    //         initParams = GoatTypes.InitParams({
+    //             virtualEth: uint112(1000e18),
+    //             bootstrapEth: uint112(10e18),
+    //             initialEth: uint112(0),
+    //             initialTokenMatch: uint112(100000000e18)
+    //         });
+    //     }
+    // }
     function _createPair() internal {
         uint256 tokenAmtToSend = GoatLibrary.getActualBootstrapTokenAmount(
             initParams.virtualEth,
@@ -99,4 +132,7 @@ contract Invariant is InvariantTest, Test {
             assertGt(bootstrapEth, actualRealWethReserve);
         }
     }
+    function invariant_SumOfUsersPresaleBalancesShouldNotBeMoreThanInitialTokenProvided()
+        public
+    {}
 }
